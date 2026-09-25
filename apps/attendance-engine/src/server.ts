@@ -203,6 +203,80 @@ if (smartDisplayDist) {
   app.get('/kiosk', (_req: Request, res: Response) => res.redirect('/display'));
 }
 
+// 1.5 Mount Expo Go Mobile App Gateway at /mobile
+app.get('/mobile', (_req: Request, res: Response) => {
+  const expUrl = 'exp://192.168.0.102:8081';
+  res.send(`<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CampusAttend OS - Expo Go Mobile App</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-950 text-white min-h-screen flex flex-col justify-between p-6 sm:p-12 font-sans selection:bg-indigo-500">
+  <header class="max-w-2xl mx-auto w-full flex justify-between items-center pb-6 border-b border-slate-800">
+    <div class="flex items-center gap-3">
+      <div class="w-10 h-10 rounded-xl bg-indigo-600 flex items-center justify-center font-bold text-white shadow-lg shadow-indigo-600/30">
+        CA
+      </div>
+      <div>
+        <h1 class="text-xl font-bold tracking-tight">CampusAttend Mobile</h1>
+        <p class="text-xs text-slate-400">Expo Go Development Bundle</p>
+      </div>
+    </div>
+    <a href="/" class="px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 hover:bg-slate-800 text-xs font-semibold text-slate-300 transition">
+      Web Portal &rarr;
+    </a>
+  </header>
+
+  <main class="max-w-md mx-auto w-full my-auto bg-slate-900/90 border border-slate-800 rounded-3xl p-8 shadow-2xl text-center space-y-6">
+    <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs font-semibold">
+      <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+      Metro Bundler Online (Port 8081)
+    </div>
+
+    <div>
+      <h2 class="text-2xl font-black tracking-tight">Scan for Expo Go</h2>
+      <p class="text-xs text-slate-400 mt-1">
+        Open on Android or iOS via the official Expo Go client
+      </p>
+    </div>
+
+    <!-- QR Code Container -->
+    <div class="p-4 bg-white rounded-2xl shadow-xl border-4 border-indigo-500/30 inline-block mx-auto">
+      <img src="/expo_go_qr.png" alt="Expo Go QR Code" class="w-64 h-64 mx-auto rounded-lg" />
+    </div>
+
+    <!-- Deep Link details -->
+    <div class="p-3.5 bg-slate-950 border border-slate-800 rounded-xl text-left space-y-1 font-mono text-xs">
+      <span class="text-slate-500 block text-[10px] uppercase font-bold tracking-wider">Expo Go URL:</span>
+      <a href="${expUrl}" class="text-indigo-400 hover:underline break-all font-semibold">${expUrl}</a>
+    </div>
+
+    <div class="space-y-3 text-left text-xs text-slate-300">
+      <div class="flex items-start gap-2.5">
+        <span class="w-5 h-5 rounded-full bg-indigo-600/30 border border-indigo-500/40 text-indigo-300 flex items-center justify-center font-bold text-[10px] flex-shrink-0 mt-0.5">1</span>
+        <p><strong>Android:</strong> Open <strong class="text-white">Expo Go</strong> app & tap <strong class="text-indigo-400">"Scan QR code"</strong>.</p>
+      </div>
+      <div class="flex items-start gap-2.5">
+        <span class="w-5 h-5 rounded-full bg-indigo-600/30 border border-indigo-500/40 text-indigo-300 flex items-center justify-center font-bold text-[10px] flex-shrink-0 mt-0.5">2</span>
+        <p><strong>iOS (iPhone):</strong> Open native <strong class="text-white">Camera</strong> app & point at QR code, then tap the prompt.</p>
+      </div>
+    </div>
+
+    <a href="${expUrl}" class="block w-full py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs shadow-lg shadow-indigo-600/30 transition text-center">
+      Open in Expo Go on this Device
+    </a>
+  </main>
+
+  <footer class="max-w-2xl mx-auto w-full text-center text-xs text-slate-600 pt-6 border-t border-slate-800">
+    CampusAttend OS • Expo SDK 51 • Native Camera & Dynamic Attendance QR Engine
+  </footer>
+</body>
+</html>`);
+});
+
 // 2. Mount College Web Portal (Student, Faculty, HOD, Director, IT Admin, Super Admin) at root /
 if (collegeWebDist) {
   app.use(express.static(collegeWebDist));

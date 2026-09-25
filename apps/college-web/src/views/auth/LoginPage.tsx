@@ -201,8 +201,18 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
           </div>
         </div>
 
-        {/* Smart Board Kiosk Link */}
-        <div className="flex items-center gap-3">
+        {/* Smart Board & Mobile Kiosk Links */}
+        <div className="flex flex-wrap items-center gap-3">
+          <a
+            href="/mobile"
+            target="_blank"
+            rel="noreferrer"
+            className="px-4 py-2 rounded-xl bg-indigo-600/20 hover:bg-indigo-600/30 border border-indigo-500/40 text-xs font-bold text-indigo-300 hover:text-white flex items-center gap-2 transition shadow-sm"
+          >
+            <Smartphone className="w-4 h-4 text-indigo-400" />
+            <span>Expo Go Mobile QR (/mobile)</span>
+            <ArrowRight className="w-3.5 h-3.5 text-indigo-400" />
+          </a>
           <a
             href="/display"
             target="_blank"
