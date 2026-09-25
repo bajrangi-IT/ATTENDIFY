@@ -1,0 +1,53 @@
+{
+  "expo": {
+    "name": "CampusAttend OS",
+    "slug": "campusattend-mobile",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "campusattend",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "backgroundColor": "#312e81",
+      "resizeMode": "contain"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "edu.campusattend.mobile",
+      "infoPlist": {
+        "NSCameraUsageDescription": "CampusAttend requires camera access to scan dynamic attendance QR codes displayed on classroom smart boards.",
+        "UIBackgroundModes": [
+          "remote-notification"
+        ]
+      }
+    },
+    "android": {
+      "package": "edu.campusattend.mobile",
+      "adaptiveIcon": {
+        "backgroundColor": "#312e81"
+      },
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.INTERNET",
+        "android.permission.VIBRATE",
+        "android.permission.POST_NOTIFICATIONS"
+      ]
+    },
+    "plugins": [
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow CampusAttend to access the camera to scan rotating dynamic QR codes in classrooms."
+        }
+      ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "campusattend-monorepo-mobile"
+      }
+    }
+  }
+}

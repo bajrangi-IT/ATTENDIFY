@@ -1,0 +1,34 @@
+{
+  "name": "campusattend-os",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "CampusAttend OS - Automated Enterprise College Attendance Management System",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "build": "npm run --workspaces --if-present build",
+    "test": "npm run --workspaces --if-present test",
+    "lint": "npm run --workspaces --if-present lint",
+    "dev:web": "npm run --workspace=apps/college-web dev",
+    "dev:display": "npm run --workspace=apps/smart-display dev",
+    "dev:mobile": "npm run --workspace=apps/student-mobile start",
+    "dev:engine": "npm run --workspace=apps/attendance-engine dev",
+    "loadtest": "npm run --workspace=apps/attendance-engine loadtest",
+    "start": "node scripts/serve24x7.js",
+    "serve:24x7": "node scripts/serve24x7.js",
+    "serve:all": "npm run build && node scripts/serve24x7.js",
+    "pm2:start": "pm2 start ecosystem.config.cjs",
+    "pm2:stop": "pm2 stop ecosystem.config.cjs",
+    "pm2:logs": "pm2 logs campusattend-os",
+    "pm2:status": "pm2 status"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.5"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
