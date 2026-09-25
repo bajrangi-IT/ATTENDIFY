@@ -23,11 +23,13 @@ import { DeviceKioskFleet } from './views/itadmin/DeviceKioskFleet';
 import { BulkStudentImport } from './views/itadmin/BulkStudentImport';
 import { TimetableManager } from './views/timetable/TimetableManager';
 import { StudentDashboard } from './views/student/StudentDashboard';
+import { ErrorBoundary } from './components/ErrorBoundary';
 
 const MainAppContent: React.FC = () => {
   const { role, isAuthenticated, loading, signOut } = useAuth();
   const [currentRole, setCurrentRole] = useState<UserRole>(role || 'faculty');
   const [activeTab, setActiveTab] = useState<NavTab>('teacher-dashboard');
+  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
 
   // Direct /display route support
   const [isDisplayRoute, setIsDisplayRoute] = useState(() => {
@@ -131,8 +133,6 @@ const MainAppContent: React.FC = () => {
     );
   }
 
-  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
-
   // 4. Authenticated Institutional Workspace
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col font-sans">
@@ -188,10 +188,12 @@ const MainAppContent: React.FC = () => {
 
 export default function App() {
   return (
-    <AuthProvider>
-      <ToastProvider>
-        <MainAppContent />
-      </ToastProvider>
-    </AuthProvider>
+    <ErrorBoundary>
+      <AuthProvider>
+        <ToastProvider>
+          <MainAppContent />
+        </ToastProvider>
+      </AuthProvider>
+    </ErrorBoundary>
   );
 }
