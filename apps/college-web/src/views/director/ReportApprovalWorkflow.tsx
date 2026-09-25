@@ -12,7 +12,8 @@ import {
   Clock,
   MessageSquare,
   Search,
-  BookOpen
+  BookOpen,
+  Users
 } from 'lucide-react';
 
 export const ReportApprovalWorkflow: React.FC = () => {
@@ -26,6 +27,10 @@ export const ReportApprovalWorkflow: React.FC = () => {
   const [reviewRemarks, setReviewRemarks] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
+  // Attendee roster for selected report
+  const [reportAttendees, setReportAttendees] = useState<any[]>([]);
+  const [loadingAttendees, setLoadingAttendees] = useState(false);
+
   const fetchReports = async () => {
     setLoading(true);
     try {
@@ -35,10 +40,10 @@ export const ReportApprovalWorkflow: React.FC = () => {
           id, session_id, total_enrolled, present_count, late_count, excused_count, absent_count,
           submission_notes, status, reviewed_at, review_remarks,
           session:attendance_sessions(
-            session_date, start_time, end_time, session_type,
+            id, session_date, start_time, end_time, session_type,
             subject_offering:subject_offerings(subject:subjects(code, name)),
-            section:sections(name),
-            classroom:classrooms(room_number)
+            section:sections(name, semester:semesters(semester_number, program:programs(name, code))),
+            classroom:classrooms(room_number, building)
           ),
           faculty:faculty(profile:profiles(first_name, last_name, email))
         `)
@@ -57,6 +62,37 @@ export const ReportApprovalWorkflow: React.FC = () => {
   useEffect(() => {
     fetchReports();
   }, []);
+
+  // Fetch student roster whenever a report is opened for review
+  useEffect(() => {
+    if (!selectedReport?.session_id) {
+      setReportAttendees([]);
+      return;
+    }
+
+    async function loadReportAttendees() {
+      setLoadingAttendees(true);
+      try {
+        const { data, error } = await supabase
+          .from('attendance_records')
+          .select(`
+            id, status, marked_at, verification_method, remarks,
+            student:students(id, roll_number, profile:profiles(first_name, last_name, email))
+          `)
+          .eq('session_id', selectedReport.session_id)
+          .order('status', { ascending: true });
+
+        if (error) throw error;
+        setReportAttendees(data || []);
+      } catch (err) {
+        console.error('Error loading report attendees:', err);
+      } finally {
+        setLoadingAttendees(false);
+      }
+    }
+
+    loadReportAttendees();
+  }, [selectedReport]);
 
   const handleProcessReport = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -188,27 +224,109 @@ export const ReportApprovalWorkflow: React.FC = () => {
           isOpen={true}
           onClose={() => setSelectedReport(null)}
           title="Review Academic Session Report"
-          subtitle={`Class: ${selectedReport.session?.subject_offering?.subject?.code} | Faculty: ${selectedReport.faculty?.profile?.first_name} ${selectedReport.faculty?.profile?.last_name}`}
-          maxWidth="md"
+          subtitle={`Course: ${selectedReport.session?.subject_offering?.subject?.name} (${selectedReport.session?.subject_offering?.subject?.code}) | Faculty: ${selectedReport.faculty?.profile?.first_name} ${selectedReport.faculty?.profile?.last_name}`}
+          size="lg"
         >
           <form onSubmit={handleProcessReport} className="space-y-4">
-            <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-xs space-y-1">
-              <div className="flex justify-between">
-                <span className="text-slate-500">Lecture Date:</span>
-                <span className="font-semibold text-slate-800">{selectedReport.session?.session_date}</span>
+            {/* Academic Session Meta Header */}
+            <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 text-xs space-y-2">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-slate-700">
+                <div>
+                  <span className="text-[10px] text-slate-500 uppercase font-bold block">Program & Semester</span>
+                  <span className="font-semibold text-slate-900">
+                    {selectedReport.session?.section?.semester?.program?.name || 'B.Tech CSE'} • Sem {selectedReport.session?.section?.semester?.semester_number || 5}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-[10px] text-slate-500 uppercase font-bold block">Section & Room</span>
+                  <span className="font-semibold text-slate-900">
+                    {selectedReport.session?.section?.name} • Room {selectedReport.session?.classroom?.room_number || 'LH-101'}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-[10px] text-slate-500 uppercase font-bold block">Lecture Date & Slot</span>
+                  <span className="font-semibold text-slate-900">
+                    {selectedReport.session?.session_date} ({selectedReport.session?.start_time?.substring(0, 5)} - {selectedReport.session?.end_time?.substring(0, 5)})
+                  </span>
+                </div>
+                <div>
+                  <span className="text-[10px] text-slate-500 uppercase font-bold block">Attendance Turnout</span>
+                  <span className="font-bold text-emerald-600">
+                    {selectedReport.present_count} / {selectedReport.total_enrolled} ({selectedReport.attendance_percentage}%)
+                  </span>
+                </div>
               </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500">Attendance Ratio:</span>
-                <span className="font-bold text-slate-900">
-                  {selectedReport.present_count + selectedReport.late_count + selectedReport.excused_count} / {selectedReport.total_enrolled} ({Math.round(((selectedReport.present_count + selectedReport.late_count + selectedReport.excused_count) / selectedReport.total_enrolled) * 100)}%)
-                </span>
-              </div>
+
               {selectedReport.submission_notes && (
                 <div className="pt-2 border-t border-slate-200">
-                  <span className="text-slate-500 font-bold block mb-0.5">Faculty Notes:</span>
+                  <span className="text-slate-500 font-bold block mb-0.5">Faculty Submission Notes:</span>
                   <p className="text-slate-700 italic">{selectedReport.submission_notes}</p>
                 </div>
               )}
+            </div>
+
+            {/* Student Attendance Roster (Real Names & Verification) */}
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                  <Users className="w-3.5 h-3.5 text-indigo-600" />
+                  <span>Student Attendance Roster ({reportAttendees.length} Enrolled)</span>
+                </label>
+                <div className="flex items-center gap-2 text-[11px] font-semibold">
+                  <span className="text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
+                    {reportAttendees.filter((a) => a.status === 'present').length} Present
+                  </span>
+                  <span className="text-rose-700 bg-rose-50 px-2 py-0.5 rounded-md border border-rose-200">
+                    {reportAttendees.filter((a) => a.status === 'absent').length} Absent
+                  </span>
+                </div>
+              </div>
+
+              <div className="border border-slate-200 rounded-xl overflow-hidden max-h-56 overflow-y-auto">
+                {loadingAttendees ? (
+                  <div className="p-6 text-center text-xs text-slate-500">Loading student attendance roster...</div>
+                ) : reportAttendees.length === 0 ? (
+                  <div className="p-6 text-center text-xs text-slate-400 italic">No attendee records found for this session.</div>
+                ) : (
+                  <table className="w-full text-left text-xs text-slate-600">
+                    <thead className="bg-slate-100 text-slate-600 uppercase font-bold tracking-wider text-[10px] sticky top-0 border-b border-slate-200">
+                      <tr>
+                        <th className="py-2 px-3">Roll Number</th>
+                        <th className="py-2 px-3">Student Name</th>
+                        <th className="py-2 px-3 text-center">Status</th>
+                        <th className="py-2 px-3">Time Marked</th>
+                        <th className="py-2 px-3">Method</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {reportAttendees.map((att) => {
+                        const name = att.student?.profile
+                          ? `${att.student.profile.first_name || ''} ${att.student.profile.last_name || ''}`.trim()
+                          : 'Student';
+                        return (
+                          <tr key={att.id} className="hover:bg-slate-50/80">
+                            <td className="py-2 px-3 font-mono font-bold text-slate-900">
+                              {att.student?.roll_number || '—'}
+                            </td>
+                            <td className="py-2 px-3 font-medium text-slate-800">
+                              {name}
+                            </td>
+                            <td className="py-2 px-3 text-center">
+                              <StatusBadge status={att.status} />
+                            </td>
+                            <td className="py-2 px-3 text-slate-500 font-mono text-[11px]">
+                              {att.marked_at ? new Date(att.marked_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '—'}
+                            </td>
+                            <td className="py-2 px-3 text-slate-500 capitalize text-[11px]">
+                              {att.verification_method?.replace('_', ' ') || 'dynamic qr'}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                )}
+              </div>
             </div>
 
             <div>
@@ -217,7 +335,7 @@ export const ReportApprovalWorkflow: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => setActionType('approved')}
-                  className={`py-2 text-xs font-bold rounded-xl border transition-all ${
+                  className={`py-2 text-xs font-bold rounded-xl border transition-all cursor-pointer ${
                     actionType === 'approved'
                       ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm'
                       : 'bg-slate-50 text-slate-700 hover:bg-slate-100'
@@ -228,7 +346,7 @@ export const ReportApprovalWorkflow: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => setActionType('changes_requested')}
-                  className={`py-2 text-xs font-bold rounded-xl border transition-all ${
+                  className={`py-2 text-xs font-bold rounded-xl border transition-all cursor-pointer ${
                     actionType === 'changes_requested'
                       ? 'bg-amber-600 text-white border-amber-600 shadow-sm'
                       : 'bg-slate-50 text-slate-700 hover:bg-slate-100'
@@ -239,7 +357,7 @@ export const ReportApprovalWorkflow: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => setActionType('rejected')}
-                  className={`py-2 text-xs font-bold rounded-xl border transition-all ${
+                  className={`py-2 text-xs font-bold rounded-xl border transition-all cursor-pointer ${
                     actionType === 'rejected'
                       ? 'bg-rose-600 text-white border-rose-600 shadow-sm'
                       : 'bg-slate-50 text-slate-700 hover:bg-slate-100'

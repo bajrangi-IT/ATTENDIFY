@@ -155,15 +155,23 @@ const MainAppContent: React.FC = () => {
         />
         <main className="flex-1 p-3 sm:p-6 lg:p-8 overflow-y-auto h-[calc(100vh-4rem)] w-full">
           {/* Teacher Views */}
-          {activeTab === 'teacher-dashboard' && <TeacherDashboard />}
+          {activeTab === 'teacher-dashboard' && (
+            <TeacherDashboard
+              onNavigateToSession={() => setActiveTab('live-session')}
+              onNavigateToTimetable={() => setActiveTab('timetable')}
+              onNavigateToReports={() => setActiveTab('teacher-reports')}
+            />
+          )}
           {activeTab === 'live-session' && <LiveSessionManager />}
           {activeTab === 'teacher-reports' && <TeacherReports />}
 
-          {/* HOD Views */}
-          {activeTab === 'hod-dashboard' && <HodDashboard />}
-
-          {/* Director & Academic Setup Views */}
-          {activeTab === 'director-dashboard' && <DirectorDashboard />}
+          {/* Director Views */}
+          {activeTab === 'director-dashboard' && (
+            <DirectorDashboard
+              onNavigateToReports={() => setActiveTab('director-approvals')}
+              onNavigateToStudents={() => setActiveTab('student-directory')}
+            />
+          )}
           {activeTab === 'institutional-reports' && <InstitutionalReportsView />}
           {activeTab === 'director-approvals' && <ReportApprovalWorkflow />}
           {activeTab === 'student-directory' && <StudentDirectory />}

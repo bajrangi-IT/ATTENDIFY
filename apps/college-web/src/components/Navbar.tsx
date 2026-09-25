@@ -279,11 +279,8 @@ export const Navbar: React.FC<NavbarProps> = ({
             className="bg-white text-slate-800 text-[11px] sm:text-xs font-semibold py-1 sm:py-1.5 px-2 sm:px-3 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 shadow-xs cursor-pointer capitalize max-w-[100px] sm:max-w-none truncate"
           >
             <option value="faculty">Faculty</option>
-            <option value="hod">HOD</option>
-            <option value="director">Director</option>
-            <option value="it_admin">IT Admin</option>
-            <option value="super_admin">Super Admin</option>
             <option value="student">Student Portal</option>
+            <option value="director">Director</option>
           </select>
         </div>
 

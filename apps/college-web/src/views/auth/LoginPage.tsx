@@ -5,9 +5,7 @@ import { useToast } from '../../context/ToastContext';
 import {
   GraduationCap,
   BookOpen,
-  Users,
-  Shield,
-  Server,
+  Building,
   KeyRound,
   Sparkles,
   Tv,
@@ -17,14 +15,8 @@ import {
   Mail,
   Eye,
   EyeOff,
-  Building,
-  Smartphone,
-  QrCode,
-  Copy,
-  ExternalLink,
   ArrowLeft
 } from 'lucide-react';
-import { Modal } from '../../components/ui/Modal';
 
 interface RoleCard {
   role: UserRole;
@@ -47,7 +39,7 @@ const ROLE_CARDS: RoleCard[] = [
     badgeColor: 'bg-emerald-50 text-emerald-700 border-emerald-200',
     email: 'aarav.patel@student.campusattend.edu',
     icon: GraduationCap,
-    description: 'Scan classroom dynamic QR, monitor 75% attendance criteria, track timetable & leave requests.',
+    description: 'Scan classroom dynamic QR on phone/web, monitor attendance criteria, view timetable & lecture records.',
     highlight: 'Phone & Web QR Scanner'
   },
   {
@@ -58,19 +50,8 @@ const ROLE_CARDS: RoleCard[] = [
     badgeColor: 'bg-indigo-50 text-indigo-700 border-indigo-200',
     email: 'vikram.sharma@campusattend.edu',
     icon: BookOpen,
-    description: 'Start live lectures, pair with Smart Board (LH-101), track real-time headcount & manual overrides.',
+    description: 'Start live lectures, get classroom Pairing Code (PAIR99), track real-time headcount & end sessions.',
     highlight: 'Live Session & Smart Board'
-  },
-  {
-    role: 'hod',
-    title: 'Head of Department',
-    name: 'Dr. Rajesh Kumar',
-    badge: 'HOD, Computer Science',
-    badgeColor: 'bg-amber-50 text-amber-700 border-amber-200',
-    email: 'hod.cse@campusattend.edu',
-    icon: Users,
-    description: 'Monitor department-wide lectures, verify student attendance shortages & faculty allocations.',
-    highlight: 'Department Analytics'
   },
   {
     role: 'director',
@@ -80,30 +61,8 @@ const ROLE_CARDS: RoleCard[] = [
     badgeColor: 'bg-purple-50 text-purple-700 border-purple-200',
     email: 'director@campusattend.edu',
     icon: Building,
-    description: 'Institution-wide metrics, review and approve session reports, directory audits & governance.',
+    description: 'Institution-wide metrics, review and approve lecture session reports with full student attendance rosters.',
     highlight: 'Governance & Approvals'
-  },
-  {
-    role: 'it_admin',
-    title: 'IT Systems Admin',
-    name: 'Alex Morgan',
-    badge: 'Kiosk & Fleet Admin',
-    badgeColor: 'bg-blue-50 text-blue-700 border-blue-200',
-    email: 'itadmin@campusattend.edu',
-    icon: Server,
-    description: 'Manage classroom smart board fleet, rotate pairing codes (PAIR99), bulk student CSV imports.',
-    highlight: 'Kiosk Fleet & Pairing'
-  },
-  {
-    role: 'super_admin',
-    title: 'Super Administrator',
-    name: 'Apex Institutional Admin',
-    badge: 'Root Access',
-    badgeColor: 'bg-rose-50 text-rose-700 border-rose-200',
-    email: 'admin@campusattend.edu',
-    icon: Shield,
-    description: 'Comprehensive campus configuration, system-wide audit trail logs & security enforcement.',
-    highlight: 'Full ERP Control'
   }
 ];
 
@@ -121,7 +80,6 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onOpenDisp
   const [password, setPassword] = useState('CampusPass2026!');
   const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isMobileModalOpen, setIsMobileModalOpen] = useState(false);
 
   const [activeAuthTab, setActiveAuthTab] = useState<'quick-roles' | 'credentials'>('quick-roles');
 
@@ -209,16 +167,8 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onOpenDisp
           </div>
         </div>
 
-        {/* Smart Board & Mobile Kiosk Links */}
-        <div className="flex flex-wrap items-center gap-2 sm:gap-3 w-full sm:w-auto">
-          <button
-            type="button"
-            onClick={() => setIsMobileModalOpen(true)}
-            className="flex-1 sm:flex-none px-3.5 py-2 rounded-xl bg-indigo-600/20 hover:bg-indigo-600/30 border border-indigo-500/40 text-xs font-bold text-indigo-300 hover:text-white flex items-center justify-center gap-1.5 transition shadow-sm cursor-pointer"
-          >
-            <Smartphone className="w-4 h-4 text-indigo-400" />
-            <span>Expo Go Mobile QR</span>
-          </button>
+        {/* Smart Board Link */}
+        <div className="flex items-center gap-2 sm:gap-3 w-full sm:w-auto">
           <button
             type="button"
             onClick={() => {
@@ -228,10 +178,11 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onOpenDisp
                 window.location.href = '/display';
               }
             }}
-            className="flex-1 sm:flex-none px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-xs font-bold text-slate-200 hover:text-white flex items-center justify-center gap-1.5 transition shadow-sm cursor-pointer"
+            className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-indigo-600/20 hover:bg-indigo-600/30 border border-indigo-500/40 text-xs font-bold text-indigo-300 hover:text-white flex items-center justify-center gap-2 transition shadow-sm cursor-pointer"
+            title="Open Classroom Interactive Smart Board Display"
           >
             <Tv className="w-4 h-4 text-indigo-400" />
-            <span>Open Smart Board</span>
+            <span>Open Smart Board (/display)</span>
           </button>
         </div>
       </header>
@@ -396,12 +347,12 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onOpenDisp
                 Select Persona
               </label>
               <div className="grid grid-cols-3 gap-1.5">
-                {(['student', 'faculty', 'hod', 'director', 'it_admin', 'super_admin'] as UserRole[]).map((r) => (
+                {(['student', 'faculty', 'director'] as UserRole[]).map((r) => (
                   <button
                     key={r}
                     type="button"
                     onClick={() => handleSelectRole(r)}
-                    className={`py-1.5 px-2 rounded-xl text-[11px] font-bold capitalize transition truncate ${
+                    className={`py-2 px-2 rounded-xl text-xs font-bold capitalize transition truncate cursor-pointer ${
                       selectedRole === r
                         ? 'bg-indigo-600 text-white shadow-xs'
                         : 'bg-slate-800 text-slate-400 hover:text-white'
@@ -504,97 +455,15 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onOpenDisp
                 window.location.href = '/display';
               }
             }}
-            className="hover:text-slate-300 transition cursor-pointer"
+            className="hover:text-indigo-400 font-semibold transition cursor-pointer flex items-center gap-1.5 text-slate-400"
           >
-            Smart Board Kiosk (/display)
+            <Tv className="w-3.5 h-3.5 text-indigo-400" />
+            <span>Open Smart Board Kiosk (/display)</span>
           </button>
           <span>•</span>
-          <button
-            type="button"
-            onClick={() => setIsMobileModalOpen(true)}
-            className="hover:text-slate-300 transition cursor-pointer"
-          >
-            Expo Go Mobile QR
-          </button>
-          <span>•</span>
-          <span className="font-mono text-slate-400">All Roles Synced 24x7</span>
+          <span className="font-mono text-slate-400">Student • Faculty • Director Unified System</span>
         </div>
       </footer>
-
-      {/* Expo Go Mobile QR Modal */}
-      {isMobileModalOpen && (
-        <Modal
-          isOpen={isMobileModalOpen}
-          onClose={() => setIsMobileModalOpen(false)}
-          title="Student Mobile App (Expo Go)"
-          subtitle="Scan the QR code below on your phone using Expo Go or your mobile camera"
-          size="md"
-        >
-          <div className="flex flex-col items-center text-center space-y-4">
-            <div className="p-3 bg-white border-2 border-indigo-500/30 rounded-2xl shadow-lg">
-              <img
-                src="/expo_go_qr.png"
-                alt="Expo Go QR Code"
-                className="w-56 h-56 object-contain"
-                onError={(e) => {
-                  (e.target as HTMLElement).style.display = 'none';
-                }}
-              />
-            </div>
-
-            <div className="w-full bg-slate-50 p-3 rounded-xl border border-slate-200 text-left space-y-2">
-              <div className="flex justify-between items-center text-xs">
-                <span className="font-bold text-slate-700">Expo LAN URL:</span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    navigator.clipboard.writeText('exp://192.168.0.102:8081');
-                    addToast({
-                      title: 'Link Copied',
-                      message: 'exp://192.168.0.102:8081 copied to clipboard.',
-                      type: 'success'
-                    });
-                  }}
-                  className="text-indigo-600 hover:text-indigo-800 font-semibold flex items-center gap-1 cursor-pointer"
-                >
-                  <Copy className="w-3.5 h-3.5" />
-                  <span>Copy Link</span>
-                </button>
-              </div>
-              <code className="block bg-slate-900 text-emerald-400 font-mono text-xs p-2 rounded-lg break-all">
-                exp://192.168.0.102:8081
-              </code>
-            </div>
-
-            <div className="w-full bg-emerald-500/10 border border-emerald-500/30 p-3.5 rounded-2xl text-left space-y-1.5">
-              <p className="text-xs font-bold text-emerald-400 flex items-center gap-1.5">
-                <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                <span>Recommended: Use Mobile Browser (Zero Setup!)</span>
-              </p>
-              <p className="text-[11px] text-slate-300 leading-relaxed">
-                Open this website on your mobile phone's Chrome or Safari browser, tap <strong>Student (Aarav)</strong>, and click <strong>Scan Classroom QR Code</strong>. Real-time scanning works immediately on phone web!
-              </p>
-            </div>
-
-            <div className="text-xs text-slate-400 space-y-2 text-left w-full border-t border-slate-800 pt-3">
-              <p className="font-bold text-slate-200">📱 If using Expo Go App:</p>
-              <ol className="list-decimal list-inside space-y-1 text-slate-400 text-[11px]">
-                <li>Phone and PC <strong>MUST be connected to the SAME Wi-Fi router</strong> (not mobile data 4G/5G).</li>
-                <li>Install <strong>Expo Go</strong> from Play Store (Android) or App Store (iOS).</li>
-                <li>Scan the QR code or enter <code className="text-indigo-400 font-mono">exp://192.168.0.102:8081</code> into Expo Go.</li>
-              </ol>
-            </div>
-
-            <button
-              type="button"
-              onClick={() => setIsMobileModalOpen(false)}
-              className="w-full py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs rounded-xl transition cursor-pointer"
-            >
-              Close
-            </button>
-          </div>
-        </Modal>
-      )}
     </div>
   );
 };

@@ -26,7 +26,8 @@ import {
   CheckCircle2,
   Clock,
   Sparkles,
-  Info
+  Info,
+  Tv
 } from 'lucide-react';
 
 interface RosterItem {
@@ -80,7 +81,7 @@ export const LiveSessionManager: React.FC = () => {
         .select(`
           id, session_date, start_time, end_time, session_type, status, is_attendance_locked, secret_seed,
           subject_offering:subject_offerings(subject:subjects(name, code)),
-          classroom:classrooms(room_number, building),
+          classroom:classrooms(id, room_number, building, device_pairing_code),
           section:sections(name),
           faculty:faculty(employee_code, profile:profiles(first_name, last_name))
         `)
@@ -198,10 +199,129 @@ export const LiveSessionManager: React.FC = () => {
     };
   }, [selectedSessionId, fetchSessionRoster, toast]);
 
+  // Real-time polling fallback while session is in progress (ensures phone web syncs live)
+  useEffect(() => {
+    if (!selectedSessionId || activeSession?.status !== 'in_progress') return;
+    const interval = setInterval(() => {
+      fetchSessionRoster(selectedSessionId);
+    }, 2500);
+    return () => clearInterval(interval);
+  }, [selectedSessionId, activeSession?.status, fetchSessionRoster]);
+
+  // Finalize attendance session, save attendee names, remove QR from smart board, and send report to director
+  const handleEndAttendanceSession = async () => {
+    if (!activeSession) return;
+    try {
+      // 1. Attempt stored procedure rpc_end_attendance_session
+      let rpcSuccess = false;
+      try {
+        const { data, error } = await supabase.rpc('rpc_end_attendance_session', {
+          p_session_id: activeSession.id,
+          p_submission_notes: 'Lecture attendance finalized by faculty.'
+        });
+        if (!error && data?.success) {
+          rpcSuccess = true;
+        }
+      } catch (e) {
+        console.warn('RPC rpc_end_attendance_session fallback:', e);
+      }
+
+      // 2. Resilient Database table synchronization
+      if (!rpcSuccess) {
+        // Mark session completed & attendance locked
+        await supabase
+          .from('attendance_sessions')
+          .update({
+            status: 'completed',
+            is_attendance_locked: true,
+            qr_expires_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', activeSession.id);
+
+        // Fetch enrolled students and mark non-scanned students as absent
+        const { data: enrolledStudents } = await supabase
+          .from('students')
+          .select('id')
+          .eq('current_section_id', activeSession.section_id);
+
+        const { data: existingRecords } = await supabase
+          .from('attendance_records')
+          .select('student_id')
+          .eq('session_id', activeSession.id);
+
+        const scannedSet = new Set((existingRecords || []).map((r) => r.student_id));
+        const absentInserts = (enrolledStudents || [])
+          .filter((st) => !scannedSet.has(st.id))
+          .map((st) => ({
+            session_id: activeSession.id,
+            student_id: st.id,
+            status: 'absent' as AttendanceStatus,
+            verification_method: 'manual_faculty',
+            marked_at: new Date().toISOString(),
+            is_finalized: true,
+            remarks: 'Marked absent at session end'
+          }));
+
+        if (absentInserts.length > 0) {
+          await supabase.from('attendance_records').insert(absentInserts);
+        }
+
+        // Tally final numbers
+        const { data: finalRecords } = await supabase
+          .from('attendance_records')
+          .select('status')
+          .eq('session_id', activeSession.id);
+
+        const totalEnrolled = enrolledStudents?.length || (finalRecords || []).length;
+        const presentCount = (finalRecords || []).filter((r) => r.status === 'present').length;
+        const lateCount = (finalRecords || []).filter((r) => r.status === 'late').length;
+        const excusedCount = (finalRecords || []).filter((r) => r.status === 'excused').length;
+        const absentCount = (finalRecords || []).filter((r) => r.status === 'absent').length;
+        const attended = presentCount + lateCount + excusedCount;
+        const pct = totalEnrolled > 0 ? Math.round((attended / totalEnrolled) * 100) : 0;
+
+        // Upsert report for Director
+        await supabase
+          .from('attendance_session_reports')
+          .upsert({
+            session_id: activeSession.id,
+            faculty_id: activeSession.faculty_id,
+            total_enrolled: totalEnrolled,
+            present_count: presentCount,
+            late_count: lateCount,
+            excused_count: excusedCount,
+            absent_count: absentCount,
+            attendance_percentage: pct,
+            submission_notes: 'Lecture attendance finalized. Transmitted to Directorate.',
+            status: 'submitted',
+            updated_at: new Date().toISOString()
+          }, { onConflict: 'session_id' });
+      }
+
+      toast.success(
+        'Session Attendance Finalized',
+        'Smart Board QR closed. All attendee names saved and report submitted to Director.'
+      );
+
+      setActiveSession((prev: any) => ({ ...prev, status: 'completed', is_attendance_locked: true }));
+      await fetchSessionRoster(activeSession.id);
+      await fetchSessions();
+    } catch (err: any) {
+      console.error('Failed to end attendance session:', err);
+      toast.error('Error Ending Session', err.message);
+    }
+  };
+
   // Session Control Actions
   const handleSessionStatusChange = async (newStatus: 'in_progress' | 'completed' | 'cancelled') => {
     if (!activeSession) return;
     try {
+      if (newStatus === 'completed') {
+        await handleEndAttendanceSession();
+        return;
+      }
+
       const { error } = await supabase
         .from('attendance_sessions')
         .update({ status: newStatus, updated_at: new Date().toISOString() })
@@ -495,6 +615,56 @@ export const LiveSessionManager: React.FC = () => {
           >
             <ExternalLink className="h-4 w-4" />
             <span>Smart Board (/display)</span>
+          </a>
+        </div>
+      </div>
+
+      {/* Prominent Smart Board Pairing Code & Live Sync Banner */}
+      <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 rounded-2xl p-5 border border-indigo-500/40 text-white shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="flex items-start sm:items-center gap-3.5">
+          <div className="w-12 h-12 rounded-2xl bg-indigo-600/30 border border-indigo-500/50 flex items-center justify-center text-indigo-300 shrink-0">
+            <Tv className="w-6 h-6 text-indigo-400" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs uppercase font-bold text-indigo-300 tracking-wider">Classroom Smart Board Pairing</span>
+              {activeSession?.status === 'in_progress' ? (
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                  Live Attendance Active
+                </span>
+              ) : (
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-800 text-slate-400 border border-slate-700 capitalize">
+                  {activeSession?.status || 'Scheduled'}
+                </span>
+              )}
+            </div>
+
+            <div className="flex flex-wrap items-baseline gap-2.5 mt-1.5">
+              <span className="text-xs text-slate-300 font-medium">Smart Board Pairing Code:</span>
+              <span className="font-mono text-2xl font-black text-amber-300 tracking-widest bg-slate-950/90 px-3 py-1 rounded-xl border border-amber-400/50 select-all shadow-inner">
+                {activeSession?.classroom?.device_pairing_code || 'PAIR99'}
+              </span>
+              <span className="text-xs text-slate-400">
+                (Room: <strong className="text-white">{activeSession?.classroom?.room_number || 'LH-101'}</strong>)
+              </span>
+            </div>
+
+            <p className="text-xs text-indigo-200/90 mt-1.5">
+              Enter this pairing code on the classroom Smart Board (<strong>/display</strong>) to project the dynamic QR code. Scans will sync here and on the board in real time!
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2 shrink-0">
+          <a
+            href="/display"
+            target="_blank"
+            rel="noreferrer"
+            className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-xl shadow-md flex items-center gap-2 transition"
+          >
+            <Tv className="w-4 h-4" />
+            <span>Open Smart Board Screen</span>
           </a>
         </div>
       </div>
@@ -826,12 +996,12 @@ export const LiveSessionManager: React.FC = () => {
         isOpen={showEndSessionDialog}
         onClose={() => setShowEndSessionDialog(false)}
         onConfirm={async () => {
-          await handleSessionStatusChange('completed');
           setShowEndSessionDialog(false);
+          await handleEndAttendanceSession();
         }}
-        title="End Lecture Session?"
-        message="Are you sure you want to end this attendance session? Check-ins from classroom smart displays will be closed."
-        confirmText="End Lecture Session"
+        title="End Attendance Session?"
+        message="Are you sure you want to end this attendance session? The QR code will disappear from the Smart Board immediately, absentees will be marked, attendee names will be saved, and the finalized report will be transmitted to the Director."
+        confirmText="End & Finalize Attendance"
         variant="warning"
       />
     </div>

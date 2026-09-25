@@ -233,9 +233,10 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
 
                     <button
                       onClick={() => onNavigateToSession?.()}
-                      className="px-3 py-1.5 bg-white border border-slate-200 hover:border-indigo-400 text-xs font-semibold text-slate-700 rounded-lg shadow-sm"
+                      className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-xl shadow-sm flex items-center gap-1.5 transition-all cursor-pointer"
                     >
-                      Start Roster
+                      <Radio className="h-3.5 w-3.5 text-indigo-200 animate-pulse" />
+                      <span>Take Attendance</span>
                     </button>
                   </div>
                 ))
@@ -293,9 +294,10 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
 
                     <button
                       onClick={() => onNavigateToSession?.()}
-                      className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-lg shadow-sm flex items-center gap-1"
+                      className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-xl shadow-sm flex items-center gap-1.5 transition-all cursor-pointer"
                     >
-                      <Play className="h-3 w-3" /> Live Kiosk
+                      <Radio className="h-3.5 w-3.5 text-indigo-200 animate-pulse" />
+                      <span>Take Attendance</span>
                     </button>
                   </div>
                 ))
