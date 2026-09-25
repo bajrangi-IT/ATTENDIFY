@@ -21,7 +21,8 @@ import {
   Smartphone,
   QrCode,
   Copy,
-  ExternalLink
+  ExternalLink,
+  ArrowLeft
 } from 'lucide-react';
 import { Modal } from '../../components/ui/Modal';
 
@@ -122,6 +123,8 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onOpenDisp
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isMobileModalOpen, setIsMobileModalOpen] = useState(false);
 
+  const [activeAuthTab, setActiveAuthTab] = useState<'quick-roles' | 'credentials'>('quick-roles');
+
   const handleSelectRole = (r: UserRole) => {
     setSelectedRole(r);
     const card = ROLE_CARDS.find((c) => c.role === r);
@@ -190,32 +193,31 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onOpenDisp
       {/* Top Header Bar */}
       <header className="max-w-7xl mx-auto w-full flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 pb-6 border-b border-slate-800">
         <div className="flex items-center gap-3">
-          <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-indigo-600 via-indigo-500 to-indigo-400 flex items-center justify-center text-white shadow-lg shadow-indigo-500/20">
-            <GraduationCap className="w-7 h-7" />
+          <div className="w-11 h-11 rounded-2xl bg-gradient-to-tr from-indigo-600 via-indigo-500 to-indigo-400 flex items-center justify-center text-white shadow-lg shadow-indigo-500/20 shrink-0">
+            <GraduationCap className="w-6 h-6" />
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h1 className="text-2xl font-black text-white tracking-tight">CampusAttend OS</h1>
-              <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-indigo-500/20 text-indigo-400 border border-indigo-500/30">
+              <h1 className="text-xl sm:text-2xl font-black text-white tracking-tight">CampusAttend OS</h1>
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-500/20 text-indigo-400 border border-indigo-500/30">
                 ERP v1.0
               </span>
             </div>
-            <p className="text-xs text-slate-400">
+            <p className="text-xs text-slate-400 hidden sm:block">
               Apex Institute of Technology &bull; Single-Port 24/7 Unified College Architecture
             </p>
           </div>
         </div>
 
         {/* Smart Board & Mobile Kiosk Links */}
-        <div className="flex flex-wrap items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2 sm:gap-3 w-full sm:w-auto">
           <button
             type="button"
             onClick={() => setIsMobileModalOpen(true)}
-            className="px-4 py-2 rounded-xl bg-indigo-600/20 hover:bg-indigo-600/30 border border-indigo-500/40 text-xs font-bold text-indigo-300 hover:text-white flex items-center gap-2 transition shadow-sm cursor-pointer"
+            className="flex-1 sm:flex-none px-3.5 py-2 rounded-xl bg-indigo-600/20 hover:bg-indigo-600/30 border border-indigo-500/40 text-xs font-bold text-indigo-300 hover:text-white flex items-center justify-center gap-1.5 transition shadow-sm cursor-pointer"
           >
             <Smartphone className="w-4 h-4 text-indigo-400" />
             <span>Expo Go Mobile QR</span>
-            <ArrowRight className="w-3.5 h-3.5 text-indigo-400" />
           </button>
           <button
             type="button"
@@ -226,69 +228,85 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onOpenDisp
                 window.location.href = '/display';
               }
             }}
-            className="px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-xs font-bold text-slate-200 hover:text-white flex items-center gap-2 transition shadow-sm cursor-pointer"
+            className="flex-1 sm:flex-none px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-xs font-bold text-slate-200 hover:text-white flex items-center justify-center gap-1.5 transition shadow-sm cursor-pointer"
           >
             <Tv className="w-4 h-4 text-indigo-400" />
-            <span>Open Smart Board (/display)</span>
-            <ArrowRight className="w-3.5 h-3.5 text-slate-400" />
+            <span>Open Smart Board</span>
           </button>
-          <span className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs font-semibold">
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-            Port 3000 Online
-          </span>
         </div>
       </header>
 
       {/* Main Body */}
-      <main className="max-w-7xl mx-auto w-full my-auto py-8">
+      <main className="max-w-7xl mx-auto w-full my-auto py-6 sm:py-8">
         {/* Banner: Demo Lecture Quick Instructions */}
-        <div className="mb-8 p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-indigo-950/70 via-slate-900 to-slate-900 border border-indigo-500/30 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-          <div className="flex items-center gap-3.5">
-            <div className="w-10 h-10 rounded-xl bg-indigo-500/20 border border-indigo-500/40 flex items-center justify-center text-indigo-400 flex-shrink-0">
-              <Sparkles className="w-5 h-5" />
-            </div>
+        <div className="mb-6 p-4 rounded-2xl bg-indigo-950/40 border border-indigo-500/30 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-sm">
+          <div className="flex items-center gap-3">
+            <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse shrink-0" />
             <div>
-              <h2 className="text-sm font-bold text-white flex items-center gap-2">
-                <span>🎯 Live Demo Classroom Ready:</span>
-                <span className="font-mono text-indigo-400">Room LH-101 (Pairing Code: PAIR99)</span>
-              </h2>
-              <p className="text-xs text-slate-400 mt-0.5">
-                Faculty starts session on phone/web &rarr; Board on <span className="font-mono text-indigo-300">/display</span> displays dynamic rotating QR &rarr; Students scan on phone to mark attendance in real time!
-              </p>
+              <span className="text-xs font-bold text-white">Live Classroom Ready: </span>
+              <span className="text-xs font-mono text-indigo-300 font-semibold">Room LH-101 (Pairing Code: PAIR99)</span>
+              <p className="text-[11px] text-slate-400 mt-0.5">Faculty starts lecture &rarr; Dynamic QR rotates on /display &rarr; Students scan live.</p>
             </div>
           </div>
-          <div className="flex items-center gap-2 flex-shrink-0">
+          <div className="flex items-center gap-2 w-full sm:w-auto">
             <button
               onClick={() => handleInstantDemoLogin('faculty')}
-              className="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold transition shadow-sm"
+              className="flex-1 sm:flex-none px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold transition shadow-xs cursor-pointer"
             >
-              Start as Faculty (Dr. Vikram)
+              Faculty Demo
             </button>
             <button
               onClick={() => handleInstantDemoLogin('student')}
-              className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition shadow-sm"
+              className="flex-1 sm:flex-none px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition shadow-xs cursor-pointer"
             >
-              Scan as Student (Aarav)
+              Student Scanner Demo
             </button>
           </div>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-          {/* Left Column: 6 Interactive Role Cards (8 Cols) */}
-          <div className="lg:col-span-8 space-y-4">
-            <div className="flex justify-between items-center mb-2">
-              <div>
-                <h2 className="text-xl font-black text-white tracking-tight flex items-center gap-2">
-                  <Users className="w-5 h-5 text-indigo-400" />
-                  Select Your Role to Login
-                </h2>
-                <p className="text-xs text-slate-400">
-                  Click any role card below for 1-click instant demo login or pre-fill institutional credentials:
-                </p>
-              </div>
+        {/* Mode Switcher Tabs */}
+        <div className="flex justify-center mb-6">
+          <div className="p-1 bg-slate-900 border border-slate-800 rounded-2xl inline-flex gap-1 shadow-lg">
+            <button
+              type="button"
+              onClick={() => setActiveAuthTab('quick-roles')}
+              className={`px-4 sm:px-6 py-2.5 rounded-xl text-xs font-bold transition flex items-center gap-2 cursor-pointer ${
+                activeAuthTab === 'quick-roles'
+                  ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <Sparkles className="w-4 h-4 text-amber-300" />
+              <span>⚡ 1-Click Role Access (Instant)</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveAuthTab('credentials')}
+              className={`px-4 sm:px-6 py-2.5 rounded-xl text-xs font-bold transition flex items-center gap-2 cursor-pointer ${
+                activeAuthTab === 'credentials'
+                  ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <KeyRound className="w-4 h-4" />
+              <span>🔑 Institutional Sign In (SSO)</span>
+            </button>
+          </div>
+        </div>
+
+        {/* TAB 1: SPACIOUS 1-CLICK ROLE ACCESS */}
+        {activeAuthTab === 'quick-roles' && (
+          <div className="space-y-6">
+            <div className="text-center max-w-xl mx-auto mb-2">
+              <h2 className="text-xl sm:text-2xl font-black text-white tracking-tight">
+                Select Your Role to Enter
+              </h2>
+              <p className="text-xs text-slate-400 mt-1">
+                Choose any role below for instant 1-click access with pre-configured institutional permissions:
+              </p>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5">
               {ROLE_CARDS.map((card) => {
                 const IconComponent = card.icon;
                 const isSelected = selectedRole === card.role;
@@ -296,44 +314,38 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onOpenDisp
                 return (
                   <div
                     key={card.role}
-                    onClick={() => handleSelectRole(card.role)}
-                    className={`relative p-5 rounded-2xl border transition-all cursor-pointer text-left flex flex-col justify-between ${
-                      isSelected
-                        ? 'bg-slate-900 border-indigo-500 shadow-xl shadow-indigo-500/10 ring-2 ring-indigo-500/20'
-                        : 'bg-slate-900/50 border-slate-800 hover:bg-slate-900/80 hover:border-slate-700'
-                    }`}
+                    onClick={() => handleInstantDemoLogin(card.role)}
+                    className="group relative p-5 sm:p-6 rounded-3xl border bg-slate-900/70 border-slate-800 hover:border-indigo-500/80 hover:bg-slate-900 transition-all duration-200 cursor-pointer flex flex-col justify-between hover:shadow-xl hover:shadow-indigo-500/10 hover:-translate-y-0.5"
                   >
                     <div>
-                      {/* Role Header */}
-                      <div className="flex justify-between items-start mb-3">
-                        <div className="flex items-center gap-2.5">
-                          <div
-                            className={`w-10 h-10 rounded-xl flex items-center justify-center ${
-                              isSelected ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-300'
-                            }`}
-                          >
+                      {/* Top Header */}
+                      <div className="flex justify-between items-start mb-3.5">
+                        <div className="flex items-center gap-3">
+                          <div className="w-11 h-11 rounded-2xl bg-slate-800 group-hover:bg-indigo-600 text-slate-300 group-hover:text-white flex items-center justify-center transition-colors shadow-sm">
                             <IconComponent className="w-5 h-5" />
                           </div>
                           <div>
-                            <h3 className="font-bold text-white text-sm leading-tight">{card.title}</h3>
-                            <span className="text-[11px] text-slate-400 font-medium">{card.name}</span>
+                            <h3 className="font-bold text-white text-sm group-hover:text-indigo-300 transition-colors">
+                              {card.title}
+                            </h3>
+                            <span className="text-xs text-slate-400 font-medium">{card.name}</span>
                           </div>
                         </div>
-                        <span
-                          className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${card.badgeColor}`}
-                        >
+                        <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full border ${card.badgeColor}`}>
                           {card.highlight}
                         </span>
                       </div>
 
                       {/* Description */}
-                      <p className="text-xs text-slate-400 leading-relaxed mb-3">
+                      <p className="text-xs text-slate-400 leading-relaxed mb-4">
                         {card.description}
                       </p>
                     </div>
 
                     <div className="pt-3 border-t border-slate-800/80 flex items-center justify-between gap-2">
-                      <span className="text-[11px] font-mono text-slate-500 truncate">{card.email}</span>
+                      <span className="text-[11px] font-mono text-slate-500 truncate max-w-[160px]">
+                        {card.email}
+                      </span>
                       <button
                         type="button"
                         onClick={(e) => {
@@ -341,23 +353,32 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onOpenDisp
                           handleInstantDemoLogin(card.role);
                         }}
                         disabled={isSubmitting || authLoading}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1 ${
-                          isSelected
-                            ? 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-sm'
-                            : 'bg-slate-800 hover:bg-slate-700 text-slate-200'
-                        }`}
+                        className="px-3.5 py-2 rounded-xl text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white transition flex items-center gap-1.5 shadow-md shadow-indigo-600/20 cursor-pointer"
                       >
-                        ⚡ 1-Click Login
+                        <span>⚡ 1-Click Login</span>
+                        <ArrowRight className="w-3 h-3" />
                       </button>
                     </div>
                   </div>
                 );
               })}
             </div>
-          </div>
 
-          {/* Right Column: Sign In Credentials Form (4 Cols) */}
-          <div className="lg:col-span-4 bg-slate-900/90 border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-2xl space-y-6">
+            <div className="text-center pt-2">
+              <button
+                type="button"
+                onClick={() => setActiveAuthTab('credentials')}
+                className="text-xs text-indigo-400 hover:text-indigo-300 font-semibold underline underline-offset-4 cursor-pointer"
+              >
+                Prefer to sign in with email and password? Switch to Credentials Sign In &rarr;
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* TAB 2: CENTERED INSTITUTIONAL CREDENTIALS LOGIN */}
+        {activeAuthTab === 'credentials' && (
+          <div className="max-w-md mx-auto bg-slate-900/90 border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-2xl space-y-6">
             <div>
               <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-500/10 border border-indigo-500/30 text-indigo-400 text-xs font-semibold mb-3">
                 <KeyRound className="w-3.5 h-3.5" />
@@ -367,6 +388,29 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onOpenDisp
               <p className="text-xs text-slate-400 mt-1">
                 Enter credentials for <span className="font-bold text-white capitalize">{selectedRole.replace('_', ' ')}</span>
               </p>
+            </div>
+
+            {/* Role Switcher Pills */}
+            <div>
+              <label className="block text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-2">
+                Select Persona
+              </label>
+              <div className="grid grid-cols-3 gap-1.5">
+                {(['student', 'faculty', 'hod', 'director', 'it_admin', 'super_admin'] as UserRole[]).map((r) => (
+                  <button
+                    key={r}
+                    type="button"
+                    onClick={() => handleSelectRole(r)}
+                    className={`py-1.5 px-2 rounded-xl text-[11px] font-bold capitalize transition truncate ${
+                      selectedRole === r
+                        ? 'bg-indigo-600 text-white shadow-xs'
+                        : 'bg-slate-800 text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    {r.replace('_', ' ')}
+                  </button>
+                ))}
+              </div>
             </div>
 
             <form onSubmit={handleFormSubmit} className="space-y-4">
@@ -409,9 +453,9 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onOpenDisp
                     {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
                 </div>
-                <div className="flex justify-between items-center mt-1.5">
-                  <span className="text-[10px] text-slate-500">Seed password: CampusPass2026!</span>
-                  <span className="text-[10px] text-indigo-400 font-semibold cursor-pointer">Default</span>
+                <div className="flex justify-between items-center mt-1.5 text-[10px] text-slate-500">
+                  <span>Seed password: CampusPass2026!</span>
+                  <span onClick={() => setPassword('CampusPass2026!')} className="text-indigo-400 font-semibold cursor-pointer hover:underline">Autofill</span>
                 </div>
               </div>
 
@@ -431,22 +475,18 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onOpenDisp
               </button>
             </form>
 
-            {/* Quick Demo One-Click Callout */}
-            <div className="pt-4 border-t border-slate-800 space-y-2">
-              <p className="text-[11px] text-slate-400 text-center font-medium">
-                Testing quickly? Use 1-click login:
-              </p>
+            <div className="pt-2 text-center">
               <button
                 type="button"
-                onClick={() => handleInstantDemoLogin(selectedRole)}
-                disabled={isSubmitting || authLoading}
-                className="w-full py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs font-bold flex items-center justify-center gap-1.5 transition"
+                onClick={() => setActiveAuthTab('quick-roles')}
+                className="text-xs text-slate-400 hover:text-white transition flex items-center justify-center gap-1 mx-auto cursor-pointer"
               >
-                <span>⚡ Instant Login as {selectedRole.toUpperCase()}</span>
+                <ArrowLeft className="w-3.5 h-3.5" />
+                <span>Back to 1-Click Role Access</span>
               </button>
             </div>
           </div>
-        </div>
+        )}
       </main>
 
       {/* Footer */}
@@ -526,12 +566,22 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onOpenDisp
               </code>
             </div>
 
-            <div className="text-xs text-slate-600 space-y-2 text-left w-full border-t border-slate-100 pt-3">
-              <p className="font-bold text-slate-800">📱 How to run on your phone:</p>
-              <ol className="list-decimal list-inside space-y-1 text-slate-600">
+            <div className="w-full bg-emerald-500/10 border border-emerald-500/30 p-3.5 rounded-2xl text-left space-y-1.5">
+              <p className="text-xs font-bold text-emerald-400 flex items-center gap-1.5">
+                <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                <span>Recommended: Use Mobile Browser (Zero Setup!)</span>
+              </p>
+              <p className="text-[11px] text-slate-300 leading-relaxed">
+                Open this website on your mobile phone's Chrome or Safari browser, tap <strong>Student (Aarav)</strong>, and click <strong>Scan Classroom QR Code</strong>. Real-time scanning works immediately on phone web!
+              </p>
+            </div>
+
+            <div className="text-xs text-slate-400 space-y-2 text-left w-full border-t border-slate-800 pt-3">
+              <p className="font-bold text-slate-200">📱 If using Expo Go App:</p>
+              <ol className="list-decimal list-inside space-y-1 text-slate-400 text-[11px]">
+                <li>Phone and PC <strong>MUST be connected to the SAME Wi-Fi router</strong> (not mobile data 4G/5G).</li>
                 <li>Install <strong>Expo Go</strong> from Play Store (Android) or App Store (iOS).</li>
-                <li>Make sure your phone is connected to the same Wi-Fi / Local Network.</li>
-                <li>Open Expo Go and scan this QR code, or paste the URL <code className="text-indigo-600 font-mono">exp://192.168.0.102:8081</code> into Expo Go.</li>
+                <li>Scan the QR code or enter <code className="text-indigo-400 font-mono">exp://192.168.0.102:8081</code> into Expo Go.</li>
               </ol>
             </div>
 

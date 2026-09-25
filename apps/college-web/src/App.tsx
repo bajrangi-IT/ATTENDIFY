@@ -131,6 +131,8 @@ const MainAppContent: React.FC = () => {
     );
   }
 
+  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
+
   // 4. Authenticated Institutional Workspace
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col font-sans">
@@ -138,10 +140,20 @@ const MainAppContent: React.FC = () => {
         currentRole={currentRole}
         onRoleChange={handleRoleChange}
         onBackToLogin={() => signOut()}
+        onToggleMobileMenu={() => setIsMobileSidebarOpen(!isMobileSidebarOpen)}
       />
-      <div className="flex flex-1 overflow-hidden">
-        <Sidebar currentRole={currentRole} activeTab={activeTab} onTabChange={setActiveTab} />
-        <main className="flex-1 p-6 lg:p-8 overflow-y-auto h-[calc(100vh-4rem)]">
+      <div className="flex flex-1 overflow-hidden relative">
+        <Sidebar
+          currentRole={currentRole}
+          activeTab={activeTab}
+          onTabChange={(tab) => {
+            setActiveTab(tab);
+            setIsMobileSidebarOpen(false);
+          }}
+          isOpenOnMobile={isMobileSidebarOpen}
+          onCloseMobile={() => setIsMobileSidebarOpen(false)}
+        />
+        <main className="flex-1 p-3 sm:p-6 lg:p-8 overflow-y-auto h-[calc(100vh-4rem)] w-full">
           {/* Teacher Views */}
           {activeTab === 'teacher-dashboard' && <TeacherDashboard />}
           {activeTab === 'live-session' && <LiveSessionManager />}

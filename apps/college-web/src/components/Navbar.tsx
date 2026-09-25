@@ -17,7 +17,8 @@ import {
   Shield,
   Clock,
   Sparkles,
-  ArrowLeft
+  ArrowLeft,
+  Menu
 } from 'lucide-react';
 
 interface NavbarProps {
@@ -25,9 +26,16 @@ interface NavbarProps {
   onRoleChange: (role: UserRole) => void;
   onSearch?: (term: string) => void;
   onBackToLogin?: () => void;
+  onToggleMobileMenu?: () => void;
 }
 
-export const Navbar: React.FC<NavbarProps> = ({ currentRole, onRoleChange, onSearch, onBackToLogin }) => {
+export const Navbar: React.FC<NavbarProps> = ({
+  currentRole,
+  onRoleChange,
+  onSearch,
+  onBackToLogin,
+  onToggleMobileMenu
+}) => {
   const { profile, role, switchRole, resetPassword, updateProfile, signOut } = useAuth();
   const { addToast } = useToast();
 
@@ -191,27 +199,37 @@ export const Navbar: React.FC<NavbarProps> = ({ currentRole, onRoleChange, onSea
   };
 
   return (
-    <header className="h-16 bg-white border-b border-slate-200 px-6 flex items-center justify-between sticky top-0 z-30 shadow-xs">
+    <header className="h-16 bg-white border-b border-slate-200 px-3 sm:px-6 flex items-center justify-between sticky top-0 z-30 shadow-xs">
       {/* Brand & Campus Identity */}
-      <div className="flex items-center space-x-3">
-        <div className="h-10 w-10 rounded-xl bg-gradient-to-tr from-indigo-700 via-indigo-600 to-indigo-500 flex items-center justify-center text-white shadow-md shadow-indigo-600/20">
-          <GraduationCap className="h-6 w-6" />
+      <div className="flex items-center space-x-2 sm:space-x-3">
+        {onToggleMobileMenu && (
+          <button
+            type="button"
+            onClick={onToggleMobileMenu}
+            className="md:hidden p-1.5 -ml-1 rounded-xl text-slate-700 hover:bg-slate-100 transition cursor-pointer"
+            title="Toggle Menu"
+          >
+            <Menu className="h-5 w-5" />
+          </button>
+        )}
+        <div className="h-9 w-9 sm:h-10 sm:w-10 rounded-xl bg-gradient-to-tr from-indigo-700 via-indigo-600 to-indigo-500 flex items-center justify-center text-white shadow-md shadow-indigo-600/20 shrink-0">
+          <GraduationCap className="h-5 w-5 sm:h-6 sm:w-6" />
         </div>
         <div>
-          <div className="flex items-center gap-2">
-            <span className="font-black text-slate-900 tracking-tight text-lg">CampusAttend OS</span>
-            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
-              ERP v1.0
+          <div className="flex items-center gap-1.5 sm:gap-2">
+            <span className="font-black text-slate-900 tracking-tight text-sm sm:text-lg">CampusAttend</span>
+            <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
+              ERP
             </span>
           </div>
-          <p className="text-[11px] text-slate-500 font-medium flex items-center gap-1">
+          <p className="text-[11px] text-slate-500 font-medium hidden sm:flex items-center gap-1">
             <Building2 className="h-3 w-3 text-slate-400" />
-            Apex Institute of Technology & Science &bull; Odd Semester 2025-26
+            Apex Institute of Technology
           </p>
         </div>
       </div>
 
-      {/* Global Search Bar */}
+      {/* Global Search Bar (Desktop only) */}
       <div className="hidden lg:flex items-center flex-1 max-w-md mx-8">
         <div className="relative w-full">
           <Search className="h-4 w-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
@@ -229,7 +247,7 @@ export const Navbar: React.FC<NavbarProps> = ({ currentRole, onRoleChange, onSea
       </div>
 
       {/* Role Switcher, Notifications & Profile */}
-      <div className="flex items-center space-x-3 sm:space-x-4">
+      <div className="flex items-center space-x-1.5 sm:space-x-3">
         {/* Prominent Back to Login / Switch Role Button */}
         <button
           onClick={() => {
@@ -244,27 +262,27 @@ export const Navbar: React.FC<NavbarProps> = ({ currentRole, onRoleChange, onSea
               type: 'info'
             });
           }}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-rose-50 text-slate-700 hover:text-rose-600 border border-slate-200 hover:border-rose-200 text-xs font-bold transition shadow-xs cursor-pointer"
+          className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-rose-50 text-slate-700 hover:text-rose-600 border border-slate-200 hover:border-rose-200 text-xs font-bold transition shadow-xs cursor-pointer shrink-0"
           title="Sign out and return to Role Selection / Login Screen"
         >
           <ArrowLeft className="w-3.5 h-3.5 text-slate-500 hover:text-rose-600" />
           <span className="hidden sm:inline">Logout / Switch Role</span>
-          <span className="sm:hidden">Logout</span>
+          <span className="sm:hidden text-[11px]">Logout</span>
         </button>
 
         {/* Role Switcher Pill */}
-        <div className="flex items-center bg-slate-100 rounded-xl p-1 border border-slate-200">
-          <span className="text-[11px] font-semibold text-slate-500 px-2.5 hidden sm:inline">Role:</span>
+        <div className="flex items-center bg-slate-100 rounded-xl p-0.5 sm:p-1 border border-slate-200">
+          <span className="text-[11px] font-semibold text-slate-500 px-2 hidden lg:inline">Role:</span>
           <select
             value={currentRole}
             onChange={(e) => handleRoleSelect(e.target.value as UserRole)}
-            className="bg-white text-slate-800 text-xs font-semibold py-1.5 px-3 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 shadow-xs cursor-pointer capitalize"
+            className="bg-white text-slate-800 text-[11px] sm:text-xs font-semibold py-1 sm:py-1.5 px-2 sm:px-3 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 shadow-xs cursor-pointer capitalize max-w-[100px] sm:max-w-none truncate"
           >
-            <option value="faculty">Faculty (Teacher)</option>
-            <option value="hod">Head of Department (HOD)</option>
-            <option value="director">Director / Dean Academic</option>
+            <option value="faculty">Faculty</option>
+            <option value="hod">HOD</option>
+            <option value="director">Director</option>
             <option value="it_admin">IT Admin</option>
-            <option value="super_admin">Super Administrator</option>
+            <option value="super_admin">Super Admin</option>
             <option value="student">Student Portal</option>
           </select>
         </div>

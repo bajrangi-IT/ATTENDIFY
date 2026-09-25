@@ -17,7 +17,8 @@ import {
   Building2,
   FileCheck,
   ShieldAlert,
-  Home
+  Home,
+  X
 } from 'lucide-react';
 
 export type NavTab =
@@ -41,9 +42,17 @@ interface SidebarProps {
   currentRole: UserRole;
   activeTab: NavTab;
   onTabChange: (tab: NavTab) => void;
+  isOpenOnMobile?: boolean;
+  onCloseMobile?: () => void;
 }
 
-export const Sidebar: React.FC<SidebarProps> = ({ currentRole, activeTab, onTabChange }) => {
+export const Sidebar: React.FC<SidebarProps> = ({
+  currentRole,
+  activeTab,
+  onTabChange,
+  isOpenOnMobile = false,
+  onCloseMobile
+}) => {
   const getNavItems = () => {
     switch (currentRole) {
       case 'faculty':
@@ -101,15 +110,26 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentRole, activeTab, onTabC
 
   const navItems = getNavItems();
 
-  return (
-    <aside className="w-64 bg-slate-900 text-slate-300 flex flex-col justify-between shrink-0 h-[calc(100vh-4rem)] select-none">
+  const renderSidebarContent = () => (
+    <div className="flex flex-col justify-between h-full">
       <div className="p-4 space-y-6">
         <div>
           <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider px-3 mb-2 flex items-center justify-between">
             <span>Navigation</span>
-            <span className="text-[10px] text-indigo-400 font-mono capitalize">
-              {currentRole.replace('_', ' ')}
-            </span>
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] text-indigo-400 font-mono capitalize">
+                {currentRole.replace('_', ' ')}
+              </span>
+              {onCloseMobile && (
+                <button
+                  type="button"
+                  onClick={onCloseMobile}
+                  className="md:hidden p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              )}
+            </div>
           </div>
 
           <nav className="space-y-1">
@@ -119,8 +139,11 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentRole, activeTab, onTabC
               return (
                 <button
                   key={item.id}
-                  onClick={() => onTabChange(item.id)}
-                  className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${
+                  onClick={() => {
+                    onTabChange(item.id);
+                    onCloseMobile?.();
+                  }}
+                  className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
                     isActive
                       ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
                       : 'text-slate-300 hover:bg-slate-800 hover:text-white'
@@ -156,6 +179,28 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentRole, activeTab, onTabC
           </p>
         </div>
       </div>
-    </aside>
+    </div>
+  );
+
+  return (
+    <>
+      {/* Desktop Persistent Sidebar */}
+      <aside className="hidden md:flex w-64 bg-slate-900 text-slate-300 flex-col justify-between shrink-0 h-[calc(100vh-4rem)] select-none">
+        {renderSidebarContent()}
+      </aside>
+
+      {/* Mobile Drawer Overlay */}
+      {isOpenOnMobile && (
+        <div className="fixed inset-0 z-40 md:hidden flex">
+          <div
+            className="fixed inset-0 bg-slate-950/70 backdrop-blur-xs transition-opacity"
+            onClick={onCloseMobile}
+          />
+          <aside className="relative w-72 max-w-[80vw] bg-slate-900 text-slate-300 flex flex-col justify-between shrink-0 h-full shadow-2xl z-50 animate-in slide-in-from-left duration-200">
+            {renderSidebarContent()}
+          </aside>
+        </div>
+      )}
+    </>
   );
 };
