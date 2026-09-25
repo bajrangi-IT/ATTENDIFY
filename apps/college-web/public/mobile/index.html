@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CampusAttend Mobile App - Expo Go QR</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-950 text-white min-h-screen flex flex-col items-center justify-center p-4 sm:p-8 font-sans">
+  <div class="max-w-md w-full bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-2xl text-center space-y-6">
+    <div class="flex items-center justify-between pb-4 border-b border-slate-800">
+      <a href="/" class="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-bold text-slate-200 transition flex items-center gap-1.5">
+        &larr; Back to Portal
+      </a>
+      <span class="text-xs font-bold font-mono px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-400 border border-indigo-500/30">
+        EXPO GO LAN
+      </span>
+    </div>
+
+    <div>
+      <h1 class="text-2xl font-black text-white">Student Mobile App</h1>
+      <p class="text-xs text-slate-400 mt-1">Scan QR in Expo Go app to launch Student Attendance Scanner</p>
+    </div>
+
+    <div class="p-4 bg-white rounded-2xl inline-block shadow-lg mx-auto">
+      <img src="/expo_go_qr.png" alt="Expo Go QR Code" class="w-56 h-56 object-contain" />
+    </div>
+
+    <div class="bg-slate-950 p-3 rounded-xl border border-slate-800 text-left">
+      <div class="flex justify-between items-center text-xs mb-1">
+        <span class="text-slate-400 font-semibold">Direct Deep Link:</span>
+        <button onclick="navigator.clipboard.writeText('exp://192.168.0.102:8081'); alert('Copied exp://192.168.0.102:8081 to clipboard!');" class="text-indigo-400 hover:text-indigo-300 font-bold cursor-pointer">
+          Copy
+        </button>
+      </div>
+      <code class="block text-emerald-400 font-mono text-xs break-all">exp://192.168.0.102:8081</code>
+    </div>
+
+    <div class="text-left text-xs text-slate-400 space-y-1.5 pt-2 border-t border-slate-800">
+      <p class="font-bold text-white mb-1">Instructions:</p>
+      <p>1. Install <strong>Expo Go</strong> on your phone (Play Store / App Store).</p>
+      <p>2. Connect your phone to the same Wi-Fi network.</p>
+      <p>3. Scan this QR code inside Expo Go or your phone camera.</p>
+    </div>
+
+    <a href="/" class="block w-full py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs transition">
+      Launch Web Portal Instead
+    </a>
+  </div>
+</body>
+</html>

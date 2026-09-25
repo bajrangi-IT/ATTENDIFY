@@ -19,8 +19,11 @@ import {
   EyeOff,
   Building,
   Smartphone,
-  QrCode
+  QrCode,
+  Copy,
+  ExternalLink
 } from 'lucide-react';
+import { Modal } from '../../components/ui/Modal';
 
 interface RoleCard {
   role: UserRole;
@@ -105,9 +108,10 @@ const ROLE_CARDS: RoleCard[] = [
 
 interface LoginPageProps {
   onLoginSuccess?: (role: UserRole) => void;
+  onOpenDisplay?: () => void;
 }
 
-export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
+export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onOpenDisplay }) => {
   const { loginAsRole, signIn, loading: authLoading } = useAuth();
   const { addToast } = useToast();
 
@@ -116,6 +120,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
   const [password, setPassword] = useState('CampusPass2026!');
   const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isMobileModalOpen, setIsMobileModalOpen] = useState(false);
 
   const handleSelectRole = (r: UserRole) => {
     setSelectedRole(r);
@@ -203,26 +208,30 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
 
         {/* Smart Board & Mobile Kiosk Links */}
         <div className="flex flex-wrap items-center gap-3">
-          <a
-            href="/mobile"
-            target="_blank"
-            rel="noreferrer"
-            className="px-4 py-2 rounded-xl bg-indigo-600/20 hover:bg-indigo-600/30 border border-indigo-500/40 text-xs font-bold text-indigo-300 hover:text-white flex items-center gap-2 transition shadow-sm"
+          <button
+            type="button"
+            onClick={() => setIsMobileModalOpen(true)}
+            className="px-4 py-2 rounded-xl bg-indigo-600/20 hover:bg-indigo-600/30 border border-indigo-500/40 text-xs font-bold text-indigo-300 hover:text-white flex items-center gap-2 transition shadow-sm cursor-pointer"
           >
             <Smartphone className="w-4 h-4 text-indigo-400" />
-            <span>Expo Go Mobile QR (/mobile)</span>
+            <span>Expo Go Mobile QR</span>
             <ArrowRight className="w-3.5 h-3.5 text-indigo-400" />
-          </a>
-          <a
-            href="/display"
-            target="_blank"
-            rel="noreferrer"
-            className="px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-xs font-bold text-slate-200 hover:text-white flex items-center gap-2 transition shadow-sm"
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              if (onOpenDisplay) {
+                onOpenDisplay();
+              } else {
+                window.location.href = '/display';
+              }
+            }}
+            className="px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-xs font-bold text-slate-200 hover:text-white flex items-center gap-2 transition shadow-sm cursor-pointer"
           >
             <Tv className="w-4 h-4 text-indigo-400" />
             <span>Open Smart Board (/display)</span>
             <ArrowRight className="w-3.5 h-3.5 text-slate-400" />
-          </a>
+          </button>
           <span className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs font-semibold">
             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
             Port 3000 Online
@@ -446,11 +455,96 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
           <span>CampusAttend OS • Enterprise College ERP & Attendance Engine</span>
         </div>
         <div className="flex items-center gap-4">
-          <a href="/display" className="hover:text-slate-300 transition">Smart Board Kiosk</a>
+          <button
+            type="button"
+            onClick={() => {
+              if (onOpenDisplay) {
+                onOpenDisplay();
+              } else {
+                window.location.href = '/display';
+              }
+            }}
+            className="hover:text-slate-300 transition cursor-pointer"
+          >
+            Smart Board Kiosk (/display)
+          </button>
+          <span>•</span>
+          <button
+            type="button"
+            onClick={() => setIsMobileModalOpen(true)}
+            className="hover:text-slate-300 transition cursor-pointer"
+          >
+            Expo Go Mobile QR
+          </button>
           <span>•</span>
           <span className="font-mono text-slate-400">All Roles Synced 24x7</span>
         </div>
       </footer>
+
+      {/* Expo Go Mobile QR Modal */}
+      {isMobileModalOpen && (
+        <Modal
+          isOpen={isMobileModalOpen}
+          onClose={() => setIsMobileModalOpen(false)}
+          title="Student Mobile App (Expo Go)"
+          subtitle="Scan the QR code below on your phone using Expo Go or your mobile camera"
+          size="md"
+        >
+          <div className="flex flex-col items-center text-center space-y-4">
+            <div className="p-3 bg-white border-2 border-indigo-500/30 rounded-2xl shadow-lg">
+              <img
+                src="/expo_go_qr.png"
+                alt="Expo Go QR Code"
+                className="w-56 h-56 object-contain"
+                onError={(e) => {
+                  (e.target as HTMLElement).style.display = 'none';
+                }}
+              />
+            </div>
+
+            <div className="w-full bg-slate-50 p-3 rounded-xl border border-slate-200 text-left space-y-2">
+              <div className="flex justify-between items-center text-xs">
+                <span className="font-bold text-slate-700">Expo LAN URL:</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard.writeText('exp://192.168.0.102:8081');
+                    addToast({
+                      title: 'Link Copied',
+                      message: 'exp://192.168.0.102:8081 copied to clipboard.',
+                      type: 'success'
+                    });
+                  }}
+                  className="text-indigo-600 hover:text-indigo-800 font-semibold flex items-center gap-1 cursor-pointer"
+                >
+                  <Copy className="w-3.5 h-3.5" />
+                  <span>Copy Link</span>
+                </button>
+              </div>
+              <code className="block bg-slate-900 text-emerald-400 font-mono text-xs p-2 rounded-lg break-all">
+                exp://192.168.0.102:8081
+              </code>
+            </div>
+
+            <div className="text-xs text-slate-600 space-y-2 text-left w-full border-t border-slate-100 pt-3">
+              <p className="font-bold text-slate-800">📱 How to run on your phone:</p>
+              <ol className="list-decimal list-inside space-y-1 text-slate-600">
+                <li>Install <strong>Expo Go</strong> from Play Store (Android) or App Store (iOS).</li>
+                <li>Make sure your phone is connected to the same Wi-Fi / Local Network.</li>
+                <li>Open Expo Go and scan this QR code, or paste the URL <code className="text-indigo-600 font-mono">exp://192.168.0.102:8081</code> into Expo Go.</li>
+              </ol>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setIsMobileModalOpen(false)}
+              className="w-full py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs rounded-xl transition cursor-pointer"
+            >
+              Close
+            </button>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 };

@@ -16,16 +16,18 @@ import {
   CheckCircle2,
   Shield,
   Clock,
-  Sparkles
+  Sparkles,
+  ArrowLeft
 } from 'lucide-react';
 
 interface NavbarProps {
   currentRole: UserRole;
   onRoleChange: (role: UserRole) => void;
   onSearch?: (term: string) => void;
+  onBackToLogin?: () => void;
 }
 
-export const Navbar: React.FC<NavbarProps> = ({ currentRole, onRoleChange, onSearch }) => {
+export const Navbar: React.FC<NavbarProps> = ({ currentRole, onRoleChange, onSearch, onBackToLogin }) => {
   const { profile, role, switchRole, resetPassword, updateProfile, signOut } = useAuth();
   const { addToast } = useToast();
 
@@ -227,7 +229,29 @@ export const Navbar: React.FC<NavbarProps> = ({ currentRole, onRoleChange, onSea
       </div>
 
       {/* Role Switcher, Notifications & Profile */}
-      <div className="flex items-center space-x-4">
+      <div className="flex items-center space-x-3 sm:space-x-4">
+        {/* Prominent Back to Login / Switch Role Button */}
+        <button
+          onClick={() => {
+            if (onBackToLogin) {
+              onBackToLogin();
+            } else {
+              signOut();
+            }
+            addToast({
+              title: 'Returned to Login',
+              message: 'Select another role or account.',
+              type: 'info'
+            });
+          }}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-rose-50 text-slate-700 hover:text-rose-600 border border-slate-200 hover:border-rose-200 text-xs font-bold transition shadow-xs cursor-pointer"
+          title="Sign out and return to Role Selection / Login Screen"
+        >
+          <ArrowLeft className="w-3.5 h-3.5 text-slate-500 hover:text-rose-600" />
+          <span className="hidden sm:inline">Logout / Switch Role</span>
+          <span className="sm:hidden">Logout</span>
+        </button>
+
         {/* Role Switcher Pill */}
         <div className="flex items-center bg-slate-100 rounded-xl p-1 border border-slate-200">
           <span className="text-[11px] font-semibold text-slate-500 px-2.5 hidden sm:inline">Role:</span>
