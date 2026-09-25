@@ -8,7 +8,9 @@ interface AuthContextType {
   role: UserRole;
   facultyRecord: Faculty | null;
   studentRecord: Student | null;
+  isAuthenticated: boolean;
   loading: boolean;
+  loginAsRole: (role: UserRole) => Promise<void>;
   signIn: (email: string, pass: string) => Promise<{ error?: string }>;
   signOut: () => Promise<void>;
   resetPassword: (email: string) => Promise<{ error?: string; success?: boolean }>;
@@ -18,14 +20,14 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-// Default seed emails mapped per role for seamless persona switching in ERP
-const ROLE_SEED_EMAILS: Record<UserRole, string> = {
+// Default seed emails mapped per role for persona authentication in ERP
+export const ROLE_SEED_EMAILS: Record<UserRole, string> = {
+  student: 'aarav.patel@student.campusattend.edu',
   faculty: 'vikram.sharma@campusattend.edu',
   hod: 'hod.cse@campusattend.edu',
   director: 'director@campusattend.edu',
   it_admin: 'itadmin@campusattend.edu',
   super_admin: 'admin@campusattend.edu',
-  student: 'aarav.patel@student.campusattend.edu',
 };
 
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
@@ -34,6 +36,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [role, setRole] = useState<UserRole>('faculty');
   const [facultyRecord, setFacultyRecord] = useState<Faculty | null>(null);
   const [studentRecord, setStudentRecord] = useState<Student | null>(null);
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
+    return !!localStorage.getItem('campusattend_auth_user');
+  });
   const [loading, setLoading] = useState(true);
 
   // Fetch full details for a profile
@@ -82,20 +87,42 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
           if (mounted && prof) {
             await loadProfileDetails(prof);
+            setIsAuthenticated(true);
             setLoading(false);
             return;
           }
         }
 
-        // If no active auth session, default to demo faculty profile from DB
-        const { data: defaultProf } = await supabase
-          .from('profiles')
-          .select('*')
-          .eq('email', ROLE_SEED_EMAILS.faculty)
-          .maybeSingle();
+        // Check if an authorized demo persona was stored in local session
+        const storedUser = localStorage.getItem('campusattend_auth_user');
+        if (storedUser) {
+          try {
+            const parsed = JSON.parse(storedUser);
+            const targetEmail = parsed.email || ROLE_SEED_EMAILS[parsed.role as UserRole];
+            if (targetEmail) {
+              const { data: demoProf } = await supabase
+                .from('profiles')
+                .select('*')
+                .eq('email', targetEmail)
+                .maybeSingle();
 
-        if (mounted && defaultProf) {
-          await loadProfileDetails(defaultProf);
+              if (mounted && demoProf) {
+                await loadProfileDetails(demoProf);
+                setIsAuthenticated(true);
+                setLoading(false);
+                return;
+              }
+            }
+          } catch (e) {
+            console.warn('Failed parsing stored auth persona', e);
+          }
+        }
+
+        // No active session -> remain unauthenticated (renders LoginPage)
+        if (mounted) {
+          setIsAuthenticated(false);
+          setProfile(null);
+          setUser(null);
         }
       } catch (err) {
         console.error('Error initializing auth:', err);
@@ -114,9 +141,10 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           .select('*')
           .eq('user_id', session.user.id)
           .maybeSingle();
-        if (prof) await loadProfileDetails(prof);
-      } else {
-        setUser(null);
+        if (prof) {
+          await loadProfileDetails(prof);
+          setIsAuthenticated(true);
+        }
       }
     });
 
@@ -126,11 +154,11 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     };
   }, []);
 
-  // Switch role persona by fetching corresponding profile from database
-  const switchRole = async (newRole: UserRole) => {
+  // 1-Click Login as Role
+  const loginAsRole = async (targetRole: UserRole) => {
     setLoading(true);
     try {
-      const email = ROLE_SEED_EMAILS[newRole];
+      const email = ROLE_SEED_EMAILS[targetRole];
       const { data: prof, error } = await supabase
         .from('profiles')
         .select('*')
@@ -139,13 +167,25 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
       if (prof) {
         await loadProfileDetails(prof);
+        setIsAuthenticated(true);
+        localStorage.setItem(
+          'campusattend_auth_user',
+          JSON.stringify({ role: targetRole, email, profileId: prof.id })
+        );
       } else {
-        // Fallback role update
-        setRole(newRole);
+        // Fallback
+        setRole(targetRole);
+        setIsAuthenticated(true);
+        localStorage.setItem('campusattend_auth_user', JSON.stringify({ role: targetRole, email }));
       }
     } finally {
       setLoading(false);
     }
+  };
+
+  // Switch role persona from navbar dropdown
+  const switchRole = async (newRole: UserRole) => {
+    await loginAsRole(newRole);
   };
 
   const signIn = async (email: string, pass: string): Promise<{ error?: string }> => {
@@ -157,6 +197,23 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       });
 
       if (error) {
+        // Fallback check if email exists in database (demo seed login verification)
+        const { data: fallbackProf } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('email', email.trim())
+          .maybeSingle();
+
+        if (fallbackProf && pass === 'CampusPass2026!') {
+          await loadProfileDetails(fallbackProf);
+          setIsAuthenticated(true);
+          localStorage.setItem(
+            'campusattend_auth_user',
+            JSON.stringify({ role: fallbackProf.role, email: fallbackProf.email, profileId: fallbackProf.id })
+          );
+          return {};
+        }
+
         return { error: error.message };
       }
 
@@ -167,7 +224,14 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           .select('*')
           .eq('user_id', data.user.id)
           .maybeSingle();
-        if (prof) await loadProfileDetails(prof);
+        if (prof) {
+          await loadProfileDetails(prof);
+          setIsAuthenticated(true);
+          localStorage.setItem(
+            'campusattend_auth_user',
+            JSON.stringify({ role: prof.role, email: prof.email, profileId: prof.id })
+          );
+        }
       }
 
       return {};
@@ -182,9 +246,12 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     setLoading(true);
     try {
       await supabase.auth.signOut();
+      localStorage.removeItem('campusattend_auth_user');
       setUser(null);
-      // Reset to default faculty demo profile
-      await switchRole('faculty');
+      setProfile(null);
+      setFacultyRecord(null);
+      setStudentRecord(null);
+      setIsAuthenticated(false);
     } finally {
       setLoading(false);
     }
@@ -233,7 +300,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         role,
         facultyRecord,
         studentRecord,
+        isAuthenticated,
         loading,
+        loginAsRole,
         signIn,
         signOut,
         resetPassword,

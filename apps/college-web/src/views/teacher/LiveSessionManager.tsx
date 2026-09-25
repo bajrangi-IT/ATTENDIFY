@@ -487,13 +487,14 @@ export const LiveSessionManager: React.FC = () => {
           </button>
 
           <a
-            href="http://localhost:5174"
+            href="/display"
             target="_blank"
             rel="noreferrer"
-            className="p-2 border border-slate-300 rounded-xl hover:bg-slate-50 text-slate-600 transition-colors"
-            title="Launch Classroom Kiosk Display"
+            className="px-3.5 py-2 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-700 text-xs font-bold rounded-xl shadow-sm flex items-center gap-1.5 transition-all"
+            title="Launch Classroom Smart Board Kiosk Display"
           >
             <ExternalLink className="h-4 w-4" />
+            <span>Smart Board (/display)</span>
           </a>
         </div>
       </div>

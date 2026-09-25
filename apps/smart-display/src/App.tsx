@@ -54,11 +54,12 @@ interface EndedSession {
 
 export default function SmartDisplayApp() {
   const [displayToken, setDisplayToken] = useState<string>(() => {
-    return localStorage.getItem('campusattend_display_token') || 'dsp_live_lh101_smart_board_token_2026';
+    return localStorage.getItem('campusattend_display_token') || '';
   });
   const [pairingCodeInput, setPairingCodeInput] = useState('');
   const [isPairingLoading, setIsPairingLoading] = useState(false);
   const [pairingError, setPairingError] = useState<string | null>(null);
+  const [isSessionActionLoading, setIsSessionActionLoading] = useState(false);
 
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [currentTime, setCurrentTime] = useState(new Date());
@@ -193,8 +194,9 @@ export default function SmartDisplayApp() {
 
   // Handle device pairing
   const handlePairDevice = async (codeToUse?: string) => {
-    const code = codeToUse || pairingCodeInput.trim();
-    if (!code) return;
+    const rawCode = (codeToUse || pairingCodeInput).trim().toUpperCase();
+    if (!rawCode) return;
+    const code = rawCode === 'LH101' ? 'PAIR99' : rawCode;
 
     setIsPairingLoading(true);
     setPairingError(null);
@@ -208,7 +210,7 @@ export default function SmartDisplayApp() {
       });
 
       if (error || !data || !data.success) {
-        setPairingError(error?.message || data?.error || 'Invalid classroom pairing code');
+        setPairingError(error?.message || data?.error || 'Invalid classroom pairing code. Use PAIR99 for Demo Room LH-101.');
         return;
       }
 
@@ -221,6 +223,82 @@ export default function SmartDisplayApp() {
       setPairingError(err.message || 'Pairing handshake failed');
     } finally {
       setIsPairingLoading(false);
+    }
+  };
+
+  // Launch Demo Lecture on LH-101 immediately
+  const handleStartDemoSession = async () => {
+    setIsSessionActionLoading(true);
+    try {
+      await supabase
+        .from('attendance_sessions')
+        .update({
+          status: 'in_progress',
+          is_attendance_locked: false,
+          qr_expires_at: new Date(Date.now() + 36000000).toISOString(),
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', 'c0000000-0000-0000-0000-000000000002');
+
+      const { data } = await supabase.rpc('rpc_get_smart_display_state', {
+        p_display_token: displayToken,
+      });
+
+      if (data?.session_state === 'ACTIVE_QR' && data.active_session) {
+        setSessionState('ACTIVE_QR');
+        const active = data.active_session;
+        setActiveSession({
+          id: active.id,
+          subjectCode: active.subject_code,
+          subjectName: active.subject_name,
+          sectionName: active.section_name,
+          facultyName: active.faculty_name,
+          sessionType: active.session_type,
+          startTime: active.start_time,
+          endTime: active.end_time,
+          attendanceCount: active.attendance_count,
+          totalEnrolled: active.total_enrolled,
+          qrToken: active.qr_token,
+          epochWindow: active.epoch_window,
+          timestamp: active.timestamp,
+          expiresInSeconds: active.expires_in_seconds,
+        });
+      }
+    } catch (err) {
+      console.error('Failed to start demo lecture session', err);
+    } finally {
+      setIsSessionActionLoading(false);
+    }
+  };
+
+  // Conclude Lecture Attendance from Screen
+  const handleEndSession = async () => {
+    if (!activeSession) return;
+    setIsSessionActionLoading(true);
+    try {
+      await supabase
+        .from('attendance_sessions')
+        .update({
+          status: 'completed',
+          is_attendance_locked: true,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', activeSession.id);
+
+      setEndedSession({
+        subjectCode: activeSession.subjectCode,
+        subjectName: activeSession.subjectName,
+        totalEnrolled: activeSession.totalEnrolled,
+        presentCount: activeSession.attendanceCount,
+        absentCount: Math.max(0, activeSession.totalEnrolled - activeSession.attendanceCount),
+        attendancePercentage: Math.round((activeSession.attendanceCount / (activeSession.totalEnrolled || 1)) * 100),
+      });
+      setSessionState('SESSION_ENDED');
+      setActiveSession(null);
+    } catch (err) {
+      console.error('Failed to end lecture session', err);
+    } finally {
+      setIsSessionActionLoading(false);
     }
   };
 
@@ -297,7 +375,7 @@ export default function SmartDisplayApp() {
                 type="text"
                 value={pairingCodeInput}
                 onChange={(e) => setPairingCodeInput(e.target.value.toUpperCase())}
-                placeholder="e.g. LH101X"
+                placeholder="e.g. PAIR99"
                 maxLength={10}
                 className="w-full bg-slate-950 border border-slate-700 rounded-2xl px-5 py-4 text-center text-3xl font-mono tracking-widest text-white uppercase focus:outline-none focus:border-indigo-500 transition-colors shadow-inner"
               />
@@ -323,14 +401,14 @@ export default function SmartDisplayApp() {
           </div>
 
           <div className="mt-8 pt-6 border-t border-slate-800">
-            <p className="text-xs text-slate-500 text-center mb-3">Or quick-pair for demo classrooms:</p>
+            <p className="text-xs text-slate-500 text-center mb-3">Or 1-click quick-pair for demo classrooms:</p>
             <div className="grid grid-cols-3 gap-2">
               <button
-                onClick={() => handlePairDevice('LH101X')}
-                className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-mono text-slate-300 border border-slate-700 flex flex-col items-center gap-1 cursor-pointer transition-colors"
+                onClick={() => handlePairDevice('PAIR99')}
+                className="px-3 py-2 rounded-xl bg-indigo-600/20 hover:bg-indigo-600/30 text-xs font-mono text-indigo-300 border border-indigo-500/40 flex flex-col items-center gap-1 cursor-pointer transition-colors"
               >
                 <span className="font-bold text-white">LH-101</span>
-                <span className="text-slate-400">LH101X</span>
+                <span className="text-indigo-400 font-bold">PAIR99</span>
               </button>
               <button
                 onClick={() => handlePairDevice('TRG204')}
@@ -386,6 +464,18 @@ export default function SmartDisplayApp() {
 
         {/* Live Clock & Fullscreen Button */}
         <div className="flex items-center gap-5">
+          {sessionState === 'ACTIVE_QR' && (
+            <button
+              onClick={handleEndSession}
+              disabled={isSessionActionLoading}
+              className="px-4 py-2.5 rounded-2xl bg-rose-500/20 hover:bg-rose-500/30 border border-rose-500/40 text-rose-300 font-bold text-xs flex items-center gap-2 transition cursor-pointer"
+              title="Conclude Attendance Session"
+            >
+              <CheckCircle2 className="w-4 h-4 text-rose-400" />
+              <span>Conclude Attendance</span>
+            </button>
+          )}
+
           <div className="text-right">
             <div className="text-3xl font-extrabold font-mono tracking-tight text-white flex items-center gap-2">
               <Clock className="w-6 h-6 text-indigo-400" />
@@ -613,6 +703,30 @@ export default function SmartDisplayApp() {
                 Listening for Lectures
               </span>
             </div>
+          </div>
+
+          {/* Quick Demo Class Launcher */}
+          <div className="pt-2 max-w-md mx-auto space-y-3">
+            <button
+              onClick={handleStartDemoSession}
+              disabled={isSessionActionLoading}
+              className="w-full py-4 px-6 rounded-2xl bg-indigo-600 hover:bg-indigo-500 active:scale-[0.99] text-white font-bold text-sm flex items-center justify-center gap-2 shadow-lg shadow-indigo-600/30 transition cursor-pointer"
+            >
+              {isSessionActionLoading ? (
+                <>
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                  <span>Activating Dynamic QR Code...</span>
+                </>
+              ) : (
+                <>
+                  <Sparkles className="w-4 h-4" />
+                  <span>🚀 Start / Display Lecture QR (CS501 - LH-101)</span>
+                </>
+              )}
+            </button>
+            <p className="text-xs text-slate-500 text-center">
+              Faculty can also start or end the session from their phone/web portal at <a href="/" target="_blank" rel="noreferrer" className="text-indigo-400 hover:underline">College Portal</a>
+            </p>
           </div>
         </main>
       )}

@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { UserRole } from '@campusattend/shared-types';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ToastProvider } from './context/ToastContext';
 import { Navbar } from './components/Navbar';
 import { Sidebar, NavTab } from './components/Sidebar';
+import { LoginPage } from './views/auth/LoginPage';
 
 // Views
 import { TeacherDashboard } from './views/teacher/TeacherDashboard';
@@ -23,34 +24,60 @@ import { TimetableManager } from './views/timetable/TimetableManager';
 import { StudentDashboard } from './views/student/StudentDashboard';
 
 const MainAppContent: React.FC = () => {
-  const { role } = useAuth();
-  const [currentRole, setCurrentRole] = useState<UserRole>('faculty');
+  const { role, isAuthenticated, loading } = useAuth();
+  const [currentRole, setCurrentRole] = useState<UserRole>(role || 'faculty');
   const [activeTab, setActiveTab] = useState<NavTab>('teacher-dashboard');
 
-  const handleRoleChange = (newRole: UserRole) => {
-    setCurrentRole(newRole);
-    switch (newRole) {
-      case 'faculty':
-        setActiveTab('teacher-dashboard');
-        break;
-      case 'hod':
-        setActiveTab('hod-dashboard');
-        break;
-      case 'director':
-        setActiveTab('director-dashboard');
-        break;
-      case 'it_admin':
-        setActiveTab('devices');
-        break;
-      case 'super_admin':
-        setActiveTab('director-dashboard');
-        break;
+  const getDefaultTabForRole = (r: UserRole): NavTab => {
+    switch (r) {
       case 'student':
-        setActiveTab('student-portal');
-        break;
+        return 'student-portal';
+      case 'faculty':
+        return 'teacher-dashboard';
+      case 'hod':
+        return 'hod-dashboard';
+      case 'director':
+        return 'director-dashboard';
+      case 'it_admin':
+        return 'devices';
+      case 'super_admin':
+        return 'director-dashboard';
+      default:
+        return 'teacher-dashboard';
     }
   };
 
+  // Sync internal tab & role whenever auth role changes
+  useEffect(() => {
+    if (role) {
+      setCurrentRole(role);
+      setActiveTab(getDefaultTabForRole(role));
+    }
+  }, [role]);
+
+  const handleRoleChange = (newRole: UserRole) => {
+    setCurrentRole(newRole);
+    setActiveTab(getDefaultTabForRole(newRole));
+  };
+
+  // 1. Loading Spinner
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center text-white">
+        <div className="w-12 h-12 rounded-2xl bg-indigo-600/20 border border-indigo-500 flex items-center justify-center animate-pulse mb-4 text-indigo-400">
+          <span className="font-bold text-lg font-mono">CA</span>
+        </div>
+        <p className="text-xs text-slate-400 font-mono">Initializing CampusAttend ERP Session...</p>
+      </div>
+    );
+  }
+
+  // 2. Unauthenticated Gate -> Render Role-Based Login Screen
+  if (!isAuthenticated) {
+    return <LoginPage onLoginSuccess={handleRoleChange} />;
+  }
+
+  // 3. Authenticated Institutional Workspace
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col font-sans">
       <Navbar currentRole={currentRole} onRoleChange={handleRoleChange} />
