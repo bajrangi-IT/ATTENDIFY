@@ -924,7 +924,7 @@ export const SmartDisplayView: React.FC<SmartDisplayViewProps> = ({ onBack }) =>
             </div>
           </div>
 
-          {/* Quick Demo Class Launcher */}
+          {/* Live Lecture Projector Launcher */}
           <div className="pt-2 max-w-sm mx-auto space-y-2.5">
             <button
               onClick={handleStartDemoSession}
@@ -939,7 +939,7 @@ export const SmartDisplayView: React.FC<SmartDisplayViewProps> = ({ onBack }) =>
               ) : (
                 <>
                   <Sparkles className="w-3.5 h-3.5" />
-                  <span>🚀 Start / Display Lecture QR (CS501 - LH-101)</span>
+                  <span>🚀 Project Live Attendance QR Code ({roomNumber})</span>
                 </>
               )}
             </button>

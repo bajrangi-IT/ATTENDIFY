@@ -620,20 +620,6 @@ export const StudentDashboard: React.FC = () => {
               </p>
             </div>
           </div>
-          <button
-            type="button"
-            onClick={async () => {
-              await supabase
-                .from('attendance_sessions')
-                .update({ status: 'in_progress', is_attendance_locked: false, updated_at: new Date().toISOString() })
-                .eq('id', 'c0000000-0000-0000-0000-000000000002');
-              await fetchStudentData();
-              addToast({ title: 'Demo Lecture Started', message: 'Room LH-101 CS501 is now live! Tap Scan to mark attendance.', type: 'success' });
-            }}
-            className="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold transition flex items-center gap-1.5 shrink-0 cursor-pointer shadow-sm"
-          >
-            <span>⚡ Start Demo Lecture (LH-101)</span>
-          </button>
         </div>
       )}
 
