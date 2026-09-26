@@ -20,7 +20,14 @@ import {
   Mail,
   Phone,
   ShieldCheck,
-  UserCheck
+  UserCheck,
+  Eye,
+  EyeOff,
+  Copy,
+  Check,
+  Lock,
+  Sparkles,
+  Key
 } from 'lucide-react';
 
 interface FacultyItem {
@@ -71,12 +78,16 @@ export const FacultyDirectory: React.FC = () => {
   const [designation, setDesignation] = useState('Assistant Professor');
   const [phone, setPhone] = useState('');
   const [deptId, setDeptId] = useState('');
+  const [initialPassword, setInitialPassword] = useState('CampusPass2026!');
+  const [showAddPassword, setShowAddPassword] = useState(false);
   const [submittingAdd, setSubmittingAdd] = useState(false);
 
   // Edit Faculty Modal
   const [editingFaculty, setEditingFaculty] = useState<FacultyItem | null>(null);
   const [editFirstName, setEditFirstName] = useState('');
   const [editLastName, setEditLastName] = useState('');
+  const [editEmail, setEditEmail] = useState('');
+  const [editEmployeeCode, setEditEmployeeCode] = useState('');
   const [editDesignation, setEditDesignation] = useState('');
   const [editPhone, setEditPhone] = useState('');
   const [editDeptId, setEditDeptId] = useState('');
@@ -89,10 +100,18 @@ export const FacultyDirectory: React.FC = () => {
   const [isPrimaryTeacher, setIsPrimaryTeacher] = useState(true);
   const [submittingAssign, setSubmittingAssign] = useState(false);
 
-  // Reset Password Modal
-  const [resetModalFaculty, setResetModalFaculty] = useState<FacultyItem | null>(null);
+  // Credential & Password Management Modal
+  const [manageCredentialsFaculty, setManageCredentialsFaculty] = useState<FacultyItem | null>(null);
+  const [newPassword, setNewPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [copiedPassword, setCopiedPassword] = useState(false);
+  const [submittingPasswordChange, setSubmittingPasswordChange] = useState(false);
   const [issuedPin, setIssuedPin] = useState<string | null>(null);
-  const [submittingReset, setSubmittingReset] = useState(false);
+  const [submittingPinReset, setSubmittingPinReset] = useState(false);
+
+  // Delete Faculty Confirm Dialog
+  const [deleteConfirmFaculty, setDeleteConfirmFaculty] = useState<FacultyItem | null>(null);
+  const [deletingFaculty, setDeletingFaculty] = useState(false);
 
   // Status toggle confirm
   const [statusConfirmFaculty, setStatusConfirmFaculty] = useState<FacultyItem | null>(null);
@@ -180,22 +199,24 @@ export const FacultyDirectory: React.FC = () => {
         p_department_id: deptId,
         p_first_name: firstName.trim(),
         p_last_name: lastName.trim(),
-        p_email: email.trim(),
-        p_employee_code: employeeCode.trim(),
+        p_email: email.trim().toLowerCase(),
+        p_employee_code: employeeCode.trim().toUpperCase(),
         p_designation: designation.trim(),
-        p_phone: phone.trim() || null
+        p_phone: phone.trim() || null,
+        p_password: initialPassword.trim() || 'CampusPass2026!'
       });
 
       if (error) throw error;
       if (!data.success) throw new Error(data.error);
 
-      toast.success('Faculty Provisioned', `${firstName} ${lastName} (${employeeCode}) added.`);
+      toast.success('Faculty Provisioned', `${firstName} ${lastName} (${employeeCode}) added with login credentials.`);
       setShowAddModal(false);
       setFirstName('');
       setLastName('');
       setEmail('');
       setEmployeeCode('');
       setPhone('');
+      setInitialPassword('CampusPass2026!');
       fetchFaculty();
     } catch (err: any) {
       toast.error('Failed to add faculty', err.message);
@@ -209,6 +230,8 @@ export const FacultyDirectory: React.FC = () => {
     setEditingFaculty(f);
     setEditFirstName(f.profile?.first_name || '');
     setEditLastName(f.profile?.last_name || '');
+    setEditEmail(f.profile?.email || '');
+    setEditEmployeeCode(f.employee_code || '');
     setEditDesignation(f.designation || 'Assistant Professor');
     setEditPhone(f.profile?.phone_number || '');
     setEditDeptId(f.department_id || (departments[0]?.id ?? ''));
@@ -225,6 +248,8 @@ export const FacultyDirectory: React.FC = () => {
         p_department_id: editDeptId,
         p_first_name: editFirstName.trim(),
         p_last_name: editLastName.trim(),
+        p_email: editEmail.trim().toLowerCase(),
+        p_employee_code: editEmployeeCode.trim().toUpperCase(),
         p_designation: editDesignation.trim(),
         p_phone: editPhone.trim() || null
       });
@@ -232,13 +257,35 @@ export const FacultyDirectory: React.FC = () => {
       if (error) throw error;
       if (!data.success) throw new Error(data.error);
 
-      toast.success('Faculty Updated', 'Faculty details successfully updated.');
+      toast.success('Faculty Updated', 'Faculty profile and credentials successfully updated.');
       setEditingFaculty(null);
       fetchFaculty();
     } catch (err: any) {
       toast.error('Failed to update faculty', err.message);
     } finally {
       setSubmittingEdit(false);
+    }
+  };
+
+  // Handle Delete Faculty
+  const handleConfirmDeleteFaculty = async () => {
+    if (!deleteConfirmFaculty) return;
+    setDeletingFaculty(true);
+    try {
+      const { data, error } = await supabase.rpc('rpc_admin_delete_faculty', {
+        p_faculty_id: deleteConfirmFaculty.id
+      });
+
+      if (error) throw error;
+      if (!data.success) throw new Error(data.error);
+
+      toast.success('Faculty Removed', `${deleteConfirmFaculty.profile?.first_name} ${deleteConfirmFaculty.profile?.last_name} deleted.`);
+      setDeleteConfirmFaculty(null);
+      fetchFaculty();
+    } catch (err: any) {
+      toast.error('Failed to delete faculty', err.message);
+    } finally {
+      setDeletingFaculty(false);
     }
   };
 
@@ -291,13 +338,42 @@ export const FacultyDirectory: React.FC = () => {
     }
   };
 
-  // Handle Password Reset / OTP Issuance
-  const handleResetPassword = async () => {
-    if (!resetModalFaculty) return;
-    setSubmittingReset(true);
+  // Handle Set Direct Password
+  const handleSetDirectPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!manageCredentialsFaculty || !manageCredentialsFaculty.profile_id) return;
+    if (newPassword.trim().length < 6) {
+      toast.error('Weak Password', 'Password must be at least 6 characters long.');
+      return;
+    }
+    setSubmittingPasswordChange(true);
+    try {
+      const { data, error } = await supabase.rpc('rpc_admin_set_user_password', {
+        p_profile_id: manageCredentialsFaculty.profile_id,
+        p_new_password: newPassword.trim()
+      });
+
+      if (error) throw error;
+      if (!data.success) throw new Error(data.error);
+
+      toast.success(
+        'Password Updated Successfully',
+        `New password applied for ${manageCredentialsFaculty.profile?.email}.`
+      );
+    } catch (err: any) {
+      toast.error('Password Update Failed', err.message);
+    } finally {
+      setSubmittingPasswordChange(false);
+    }
+  };
+
+  // Handle Password Reset PIN / OTP Issuance
+  const handleGeneratePin = async () => {
+    if (!manageCredentialsFaculty) return;
+    setSubmittingPinReset(true);
     try {
       const { data, error } = await supabase.rpc('rpc_admin_reset_user_password', {
-        p_profile_id: resetModalFaculty.profile_id
+        p_profile_id: manageCredentialsFaculty.profile_id
       });
 
       if (error) throw error;
@@ -306,10 +382,27 @@ export const FacultyDirectory: React.FC = () => {
       setIssuedPin(data.temporary_pin);
       toast.success('Temporary OTP Issued', `Secure reset code generated for ${data.email}.`);
     } catch (err: any) {
-      toast.error('Failed to reset credentials', err.message);
+      toast.error('Failed to issue OTP', err.message);
     } finally {
-      setSubmittingReset(false);
+      setSubmittingPinReset(false);
     }
+  };
+
+  // Helper to generate random strong password
+  const generateRandomPassword = () => {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789!@#$%&*';
+    let result = '';
+    for (let i = 0; i < 12; i++) {
+      result += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    setNewPassword(result);
+  };
+
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedPassword(true);
+    setTimeout(() => setCopiedPassword(false), 2000);
+    toast.success('Copied', 'Credential copied to clipboard.');
   };
 
   return (
@@ -325,13 +418,13 @@ export const FacultyDirectory: React.FC = () => {
           </div>
           <h1 className="text-2xl font-black text-slate-900 tracking-tight mt-1">Faculty & Academic Staff</h1>
           <p className="text-xs text-slate-500 font-medium mt-0.5">
-            Provision faculty accounts, assign academic departments, configure teaching assignments, and manage access security.
+            Manage faculty profiles, employee IDs, authentication passwords, class assignments, and account access.
           </p>
         </div>
 
         <button
           onClick={() => setShowAddModal(true)}
-          className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl shadow-sm flex items-center gap-2 transition-all self-start md:self-center"
+          className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl shadow-sm flex items-center gap-2 transition-all self-start md:self-center cursor-pointer"
         >
           <Plus className="h-4 w-4" /> Provision New Faculty
         </button>
@@ -363,7 +456,7 @@ export const FacultyDirectory: React.FC = () => {
                 setSelectedDeptId(e.target.value);
                 setCurrentPage(1);
               }}
-              className="py-1.5 px-3 bg-white border border-slate-300 rounded-xl text-xs font-semibold text-slate-700"
+              className="py-1.5 px-3 bg-white border border-slate-300 rounded-xl text-xs font-semibold text-slate-700 cursor-pointer"
             >
               <option value="all">All Departments</option>
               {departments.map((d) => (
@@ -437,41 +530,47 @@ export const FacultyDirectory: React.FC = () => {
                     <td className="py-3.5 px-4 text-right">
                       <div className="flex items-center justify-end gap-1.5">
                         <button
-                          onClick={() => {
-                            setAssigningFaculty(f);
-                          }}
-                          title="Assign Subject & Section"
-                          className="p-1.5 hover:bg-indigo-50 text-indigo-600 rounded-lg transition-colors border border-indigo-100"
+                          onClick={() => setAssigningFaculty(f)}
+                          title="Assign Course & Section"
+                          className="p-1.5 hover:bg-indigo-50 text-indigo-600 rounded-lg transition-colors border border-indigo-100 cursor-pointer"
                         >
                           <BookOpen className="h-3.5 w-3.5" />
                         </button>
                         <button
                           onClick={() => handleOpenEdit(f)}
-                          title="Edit Faculty Details"
-                          className="p-1.5 hover:bg-slate-100 text-slate-600 rounded-lg transition-colors border border-slate-200"
+                          title="Edit Faculty Details & ID"
+                          className="p-1.5 hover:bg-slate-100 text-slate-600 rounded-lg transition-colors border border-slate-200 cursor-pointer"
                         >
                           <Edit className="h-3.5 w-3.5" />
                         </button>
                         <button
                           onClick={() => {
-                            setResetModalFaculty(f);
+                            setManageCredentialsFaculty(f);
+                            setNewPassword('');
                             setIssuedPin(null);
                           }}
-                          title="Reset Password / Issue OTP"
-                          className="p-1.5 hover:bg-amber-50 text-amber-600 rounded-lg transition-colors border border-amber-200"
+                          title="Manage ID & Login Password"
+                          className="p-1.5 hover:bg-amber-50 text-amber-600 rounded-lg transition-colors border border-amber-200 cursor-pointer"
                         >
                           <KeyRound className="h-3.5 w-3.5" />
                         </button>
                         <button
                           onClick={() => setStatusConfirmFaculty(f)}
                           title={f.profile?.is_active ? 'Deactivate' : 'Reactivate'}
-                          className={`p-1.5 rounded-lg transition-colors border ${
+                          className={`p-1.5 rounded-lg transition-colors border cursor-pointer ${
                             f.profile?.is_active
-                              ? 'hover:bg-red-50 text-red-600 border-red-200'
+                              ? 'hover:bg-amber-50 text-amber-600 border-amber-200'
                               : 'hover:bg-emerald-50 text-emerald-600 border-emerald-200'
                           }`}
                         >
                           <ShieldCheck className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          onClick={() => setDeleteConfirmFaculty(f)}
+                          title="Delete Faculty Account"
+                          className="p-1.5 hover:bg-red-50 text-red-600 rounded-lg transition-colors border border-red-200 cursor-pointer"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
                         </button>
                       </div>
                     </td>
@@ -570,7 +669,7 @@ export const FacultyDirectory: React.FC = () => {
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="text-[11px] font-bold text-slate-600">Institutional Email *</label>
+              <label className="text-[11px] font-bold text-slate-600">Institutional Email (Login ID) *</label>
               <input
                 type="email"
                 required
@@ -592,18 +691,42 @@ export const FacultyDirectory: React.FC = () => {
             </div>
           </div>
 
+          <div>
+            <label className="text-[11px] font-bold text-slate-600 flex items-center justify-between">
+              <span>Initial Login Password *</span>
+              <span className="text-[10px] text-slate-400 font-normal">Min. 6 characters</span>
+            </label>
+            <div className="relative mt-1">
+              <input
+                type={showAddPassword ? 'text' : 'password'}
+                required
+                minLength={6}
+                value={initialPassword}
+                onChange={(e) => setInitialPassword(e.target.value)}
+                className="w-full p-2 pr-9 text-xs border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500 font-mono"
+              />
+              <button
+                type="button"
+                onClick={() => setShowAddPassword(!showAddPassword)}
+                className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600 cursor-pointer"
+              >
+                {showAddPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+              </button>
+            </div>
+          </div>
+
           <div className="pt-2 flex justify-end gap-2">
             <button
               type="button"
               onClick={() => setShowAddModal(false)}
-              className="px-4 py-2 border border-slate-200 text-slate-600 text-xs font-bold rounded-xl hover:bg-slate-50"
+              className="px-4 py-2 border border-slate-200 text-slate-600 text-xs font-bold rounded-xl hover:bg-slate-50 cursor-pointer"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={submittingAdd}
-              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl disabled:opacity-50"
+              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl disabled:opacity-50 cursor-pointer"
             >
               {submittingAdd ? 'Provisioning...' : 'Confirm Provisioning'}
             </button>
@@ -612,7 +735,7 @@ export const FacultyDirectory: React.FC = () => {
       </Modal>
 
       {/* Edit Faculty Modal */}
-      <Modal isOpen={!!editingFaculty} onClose={() => setEditingFaculty(null)} title="Edit Faculty Profile">
+      <Modal isOpen={!!editingFaculty} onClose={() => setEditingFaculty(null)} title="Edit Faculty Profile & ID">
         <form onSubmit={handleEditFaculty} className="space-y-4">
           <div className="grid grid-cols-2 gap-3">
             <div>
@@ -633,6 +756,29 @@ export const FacultyDirectory: React.FC = () => {
                 value={editLastName}
                 onChange={(e) => setEditLastName(e.target.value)}
                 className="w-full mt-1 p-2 text-xs border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-[11px] font-bold text-slate-600">Institutional Email (Login ID)</label>
+              <input
+                type="email"
+                required
+                value={editEmail}
+                onChange={(e) => setEditEmail(e.target.value)}
+                className="w-full mt-1 p-2 text-xs border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500"
+              />
+            </div>
+            <div>
+              <label className="text-[11px] font-bold text-slate-600">Employee Code</label>
+              <input
+                type="text"
+                required
+                value={editEmployeeCode}
+                onChange={(e) => setEditEmployeeCode(e.target.value.toUpperCase())}
+                className="w-full mt-1 p-2 text-xs border border-slate-300 rounded-xl font-mono uppercase focus:ring-2 focus:ring-indigo-500"
               />
             </div>
           </div>
@@ -677,14 +823,14 @@ export const FacultyDirectory: React.FC = () => {
             <button
               type="button"
               onClick={() => setEditingFaculty(null)}
-              className="px-4 py-2 border border-slate-200 text-slate-600 text-xs font-bold rounded-xl hover:bg-slate-50"
+              className="px-4 py-2 border border-slate-200 text-slate-600 text-xs font-bold rounded-xl hover:bg-slate-50 cursor-pointer"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={submittingEdit}
-              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl"
+              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl cursor-pointer"
             >
               {submittingEdit ? 'Saving...' : 'Save Updates'}
             </button>
@@ -735,9 +881,9 @@ export const FacultyDirectory: React.FC = () => {
               id="isPrimary"
               checked={isPrimaryTeacher}
               onChange={(e) => setIsPrimaryTeacher(e.target.checked)}
-              className="rounded text-indigo-600"
+              className="rounded text-indigo-600 cursor-pointer"
             />
-            <label htmlFor="isPrimary" className="text-xs font-semibold text-slate-700">
+            <label htmlFor="isPrimary" className="text-xs font-semibold text-slate-700 cursor-pointer">
               Primary Course Instructor (receives direct attendance session rights)
             </label>
           </div>
@@ -746,14 +892,14 @@ export const FacultyDirectory: React.FC = () => {
             <button
               type="button"
               onClick={() => setAssigningFaculty(null)}
-              className="px-4 py-2 border border-slate-200 text-slate-600 text-xs font-bold rounded-xl hover:bg-slate-50"
+              className="px-4 py-2 border border-slate-200 text-slate-600 text-xs font-bold rounded-xl hover:bg-slate-50 cursor-pointer"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={submittingAssign}
-              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl"
+              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl cursor-pointer"
             >
               {submittingAssign ? 'Assigning...' : 'Assign Class'}
             </button>
@@ -761,60 +907,133 @@ export const FacultyDirectory: React.FC = () => {
         </form>
       </Modal>
 
-      {/* Password Reset Modal */}
+      {/* Credential & Password Management Modal */}
       <Modal
-        isOpen={!!resetModalFaculty}
+        isOpen={!!manageCredentialsFaculty}
         onClose={() => {
-          setResetModalFaculty(null);
+          setManageCredentialsFaculty(null);
+          setNewPassword('');
           setIssuedPin(null);
         }}
-        title="Administrative Password Reset"
+        title={`Credentials & Password: ${manageCredentialsFaculty?.profile?.first_name} ${manageCredentialsFaculty?.profile?.last_name}`}
       >
         <div className="space-y-4">
-          <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800 flex items-start gap-2">
-            <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600 mt-0.5" />
-            <div>
-              <span className="font-bold">Zero Plaintext Exposure Policy:</span> Generating a reset will invalidate existing session credentials and emit an audited security notification.
+          {/* Identity Card */}
+          <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-1.5 text-xs">
+            <div className="flex items-center justify-between">
+              <span className="text-slate-500 font-medium">Login ID (Email):</span>
+              <span className="font-bold text-slate-900 font-mono">{manageCredentialsFaculty?.profile?.email}</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-slate-500 font-medium">Employee Code:</span>
+              <span className="font-bold text-indigo-700 font-mono">{manageCredentialsFaculty?.employee_code}</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-slate-500 font-medium">Academic Role:</span>
+              <span className="font-semibold text-slate-700">{manageCredentialsFaculty?.designation} ({manageCredentialsFaculty?.department?.code})</span>
             </div>
           </div>
 
-          <div className="text-xs text-slate-600">
-            Account: <span className="font-bold text-slate-900">{resetModalFaculty?.profile?.first_name} {resetModalFaculty?.profile?.last_name}</span> ({resetModalFaculty?.profile?.email})
-          </div>
+          {/* Direct Password Form */}
+          <form onSubmit={handleSetDirectPassword} className="space-y-3 pt-1 border-t border-slate-200">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                <Lock className="w-3.5 h-3.5 text-indigo-600" />
+                <span>Set New Login Password</span>
+              </label>
+              <button
+                type="button"
+                onClick={generateRandomPassword}
+                className="text-[11px] text-indigo-600 hover:text-indigo-700 font-bold flex items-center gap-1 cursor-pointer"
+              >
+                <Sparkles className="w-3 h-3 text-amber-500" />
+                <span>Generate Strong</span>
+              </button>
+            </div>
 
-          {issuedPin ? (
-            <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-xl text-center space-y-2">
-              <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-700">
-                Temporary Verification PIN Issued
-              </span>
-              <div className="text-3xl font-mono font-black text-emerald-900 tracking-widest">
-                {issuedPin}
+            <div className="relative">
+              <input
+                type={showPassword ? 'text' : 'password'}
+                required
+                minLength={6}
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                placeholder="Enter new password (min. 6 characters)"
+                className="w-full p-2.5 pr-20 text-xs border border-slate-300 rounded-xl font-mono focus:ring-2 focus:ring-indigo-500"
+              />
+              <div className="absolute right-2 top-2 flex items-center gap-1">
+                {newPassword && (
+                  <button
+                    type="button"
+                    onClick={() => copyToClipboard(newPassword)}
+                    title="Copy Password"
+                    className="p-1 hover:bg-slate-100 rounded text-slate-400 hover:text-slate-600 cursor-pointer"
+                  >
+                    {copiedPassword ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="p-1 hover:bg-slate-100 rounded text-slate-400 hover:text-slate-600 cursor-pointer"
+                >
+                  {showPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                </button>
               </div>
-              <p className="text-[11px] text-emerald-600 font-medium">
-                Convey this PIN securely to the faculty member. It has been audited in security logs.
-              </p>
             </div>
-          ) : (
-            <div className="pt-2 flex justify-end gap-2">
+
+            <p className="text-[11px] text-slate-500 leading-relaxed">
+              Updates password in Supabase Auth immediately. The faculty member can log in using their email and this password.
+            </p>
+
+            <button
+              type="submit"
+              disabled={submittingPasswordChange || !newPassword}
+              className="w-full py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+            >
+              <Key className="w-3.5 h-3.5" />
+              <span>{submittingPasswordChange ? 'Updating Password...' : 'Save & Update Login Password'}</span>
+            </button>
+          </form>
+
+          {/* Secondary Option: Issue OTP PIN */}
+          <div className="pt-3 border-t border-slate-200">
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-slate-500 font-medium">Need single-use temporary OTP instead?</span>
               <button
                 type="button"
-                onClick={() => setResetModalFaculty(null)}
-                className="px-4 py-2 border border-slate-200 text-slate-600 text-xs font-bold rounded-xl"
+                onClick={handleGeneratePin}
+                disabled={submittingPinReset}
+                className="text-xs text-amber-700 hover:text-amber-800 font-bold cursor-pointer"
               >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleResetPassword}
-                disabled={submittingReset}
-                className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold rounded-xl"
-              >
-                {submittingReset ? 'Generating PIN...' : 'Issue Reset PIN'}
+                {submittingPinReset ? 'Generating...' : 'Issue Reset OTP'}
               </button>
             </div>
-          )}
+
+            {issuedPin && (
+              <div className="mt-2 p-3 bg-amber-50 border border-amber-200 rounded-xl text-center space-y-1">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-amber-700">
+                  Temporary 6-Digit OTP PIN
+                </span>
+                <div className="text-2xl font-mono font-black text-amber-900 tracking-widest">
+                  {issuedPin}
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       </Modal>
+
+      {/* Delete Faculty Confirmation */}
+      <ConfirmDialog
+        isOpen={!!deleteConfirmFaculty}
+        onClose={() => setDeleteConfirmFaculty(null)}
+        onConfirm={handleConfirmDeleteFaculty}
+        title="Delete Faculty Account"
+        message={`Are you sure you want to permanently delete faculty member ${deleteConfirmFaculty?.profile?.first_name} ${deleteConfirmFaculty?.profile?.last_name} (${deleteConfirmFaculty?.employee_code})? This will remove their teaching allocations and authentication access.`}
+        confirmLabel={deletingFaculty ? 'Deleting...' : 'Delete Permanently'}
+        variant="danger"
+      />
 
       {/* Status Toggle Confirm */}
       <ConfirmDialog

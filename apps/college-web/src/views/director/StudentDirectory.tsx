@@ -24,7 +24,14 @@ import {
   ShieldCheck,
   ShieldAlert,
   Percent,
-  SlidersHorizontal
+  SlidersHorizontal,
+  Eye,
+  EyeOff,
+  Copy,
+  Check,
+  Lock,
+  Sparkles,
+  Key
 } from 'lucide-react';
 
 interface StudentDirectoryItem {
@@ -91,14 +98,19 @@ export const StudentDirectory: React.FC = () => {
   const [newSectionId, setNewSectionId] = useState('');
   const [newBatchYear, setNewBatchYear] = useState(new Date().getFullYear());
   const [newPhone, setNewPhone] = useState('');
+  const [newPassword, setNewPassword] = useState('CampusPass2026!');
+  const [showNewPassword, setShowNewPassword] = useState(false);
   const [createSubmitting, setCreateSubmitting] = useState(false);
 
   // Edit Student Modal
   const [editingStudent, setEditingStudent] = useState<StudentDirectoryItem | null>(null);
   const [editFirstName, setEditFirstName] = useState('');
   const [editLastName, setEditLastName] = useState('');
+  const [editEmail, setEditEmail] = useState('');
   const [editRollNumber, setEditRollNumber] = useState('');
+  const [editRegNumber, setEditRegNumber] = useState('');
   const [editBatchYear, setEditBatchYear] = useState(2023);
+  const [editSectionId, setEditSectionId] = useState('');
   const [editPhone, setEditPhone] = useState('');
   const [editSubmitting, setEditSubmitting] = useState(false);
 
@@ -108,10 +120,18 @@ export const StudentDirectory: React.FC = () => {
   const [transferReason, setTransferReason] = useState('');
   const [transferSubmitting, setTransferSubmitting] = useState(false);
 
-  // Password Reset / OTP Modal
-  const [resetModalStudent, setResetModalStudent] = useState<StudentDirectoryItem | null>(null);
+  // Credential & Password Management Modal
+  const [manageCredentialsStudent, setManageCredentialsStudent] = useState<StudentDirectoryItem | null>(null);
+  const [studentNewPassword, setStudentNewPassword] = useState('');
+  const [showStudentPassword, setShowStudentPassword] = useState(false);
+  const [copiedPassword, setCopiedPassword] = useState(false);
+  const [submittingPasswordChange, setSubmittingPasswordChange] = useState(false);
   const [issuedPin, setIssuedPin] = useState<string | null>(null);
-  const [resetSubmitting, setResetSubmitting] = useState(false);
+  const [submittingPinReset, setSubmittingPinReset] = useState(false);
+
+  // Delete Student Confirm Dialog
+  const [deleteConfirmStudent, setDeleteConfirmStudent] = useState<StudentDirectoryItem | null>(null);
+  const [deletingStudent, setDeletingStudent] = useState(false);
 
   // Status toggle confirmation
   const [statusToggleStudent, setStatusToggleStudent] = useState<StudentDirectoryItem | null>(null);
@@ -161,21 +181,20 @@ export const StudentDirectory: React.FC = () => {
 
       if (error) throw error;
 
-      setStudents(data?.items || []);
-      setTotalCount(data?.total_count || 0);
+      if (data) {
+        setStudents(data.items || []);
+        setTotalCount(data.total_count || 0);
+      }
     } catch (err: any) {
-      console.error('Error in rpc_search_students:', err);
-      toast.error('Search Failed', err.message);
+      console.error('Failed to query students:', err);
+      toast.error('Search failed', err.message);
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    const handler = setTimeout(() => {
-      fetchStudents();
-    }, 200);
-    return () => clearTimeout(handler);
+    fetchStudents();
   }, [
     searchTerm,
     selectedDeptId,
@@ -187,29 +206,32 @@ export const StudentDirectory: React.FC = () => {
     pageSize
   ]);
 
-  // Open Detailed Student Attendance Profile
-  const handleOpenStudentProfile = async (st: StudentDirectoryItem) => {
+  // Load detailed student attendance report for drill-down modal
+  const handleOpenStudentDetail = async (st: StudentDirectoryItem) => {
     setSelectedStudent(st);
     setLoadingProfileDetails(true);
     try {
       const [{ data: sumData }, { data: recData }, { data: auditData }] = await Promise.all([
-        supabase.from('v_student_attendance_summary').select('*').eq('student_id', st.student_id),
+        supabase
+          .from('v_student_attendance_summary')
+          .select('*')
+          .eq('student_id', st.student_id),
         supabase
           .from('attendance_records')
           .select(`
-            id, status, verification_method, marked_at, remarks,
+            id, status, is_late, marked_at,
             session:attendance_sessions(
-              session_date, start_time, end_time, session_type,
-              subject_offering:subject_offerings(subject:subjects(code, name))
+              session_date, start_time, end_time,
+              subject_offering:subject_offerings(subject:subjects(name, code))
             )
           `)
           .eq('student_id', st.student_id)
           .order('marked_at', { ascending: false })
-          .limit(50),
+          .limit(10),
         supabase
           .from('enrollment_history')
           .select(`
-            id, effective_date, reason, created_at,
+            id, effective_date, reason,
             from_section:sections!from_section_id(name),
             to_section:sections!to_section_id(name)
           `)
@@ -241,13 +263,14 @@ export const StudentDirectory: React.FC = () => {
         p_registration_number: (newRegNumber.trim() || newRollNumber.trim()).toUpperCase(),
         p_section_id: newSectionId,
         p_batch_year: Number(newBatchYear),
-        p_phone: newPhone.trim() || null
+        p_phone: newPhone.trim() || null,
+        p_password: newPassword.trim() || 'CampusPass2026!'
       });
 
       if (error) throw error;
       if (!data.success) throw new Error(data.error);
 
-      toast.success('Student Enrolled', `${newFirstName} ${newLastName} added to academic registry.`);
+      toast.success('Student Enrolled', `${newFirstName} ${newLastName} enrolled with login credentials.`);
       setShowCreateModal(false);
       setNewFirstName('');
       setNewLastName('');
@@ -255,6 +278,7 @@ export const StudentDirectory: React.FC = () => {
       setNewRollNumber('');
       setNewRegNumber('');
       setNewPhone('');
+      setNewPassword('CampusPass2026!');
       fetchStudents();
     } catch (err: any) {
       toast.error('Enrollment Failed', err.message);
@@ -268,8 +292,11 @@ export const StudentDirectory: React.FC = () => {
     setEditingStudent(st);
     setEditFirstName(st.first_name);
     setEditLastName(st.last_name);
+    setEditEmail(st.email);
     setEditRollNumber(st.roll_number);
+    setEditRegNumber(st.registration_number || st.roll_number);
     setEditBatchYear(st.batch_year);
+    setEditSectionId(st.section_id);
     setEditPhone(st.phone || '');
   };
 
@@ -283,9 +310,12 @@ export const StudentDirectory: React.FC = () => {
         p_student_id: editingStudent.student_id,
         p_first_name: editFirstName.trim(),
         p_last_name: editLastName.trim(),
+        p_email: editEmail.trim().toLowerCase(),
         p_phone: editPhone.trim() || null,
         p_roll_number: editRollNumber.trim().toUpperCase(),
-        p_batch_year: Number(editBatchYear)
+        p_registration_number: editRegNumber.trim().toUpperCase(),
+        p_batch_year: Number(editBatchYear),
+        p_section_id: editSectionId || null
       });
 
       if (error) throw error;
@@ -298,6 +328,28 @@ export const StudentDirectory: React.FC = () => {
       toast.error('Update Failed', err.message);
     } finally {
       setEditSubmitting(false);
+    }
+  };
+
+  // Delete Student
+  const handleConfirmDeleteStudent = async () => {
+    if (!deleteConfirmStudent) return;
+    setDeletingStudent(true);
+    try {
+      const { data, error } = await supabase.rpc('rpc_admin_delete_student', {
+        p_student_id: deleteConfirmStudent.student_id
+      });
+
+      if (error) throw error;
+      if (!data.success) throw new Error(data.error);
+
+      toast.success('Student Removed', `${deleteConfirmStudent.full_name} (${deleteConfirmStudent.roll_number}) deleted.`);
+      setDeleteConfirmStudent(null);
+      fetchStudents();
+    } catch (err: any) {
+      toast.error('Failed to delete student', err.message);
+    } finally {
+      setDeletingStudent(false);
     }
   };
 
@@ -349,13 +401,42 @@ export const StudentDirectory: React.FC = () => {
     }
   };
 
-  // Password Reset / OTP
-  const handleResetPassword = async () => {
-    if (!resetModalStudent) return;
-    setResetSubmitting(true);
+  // Direct Password Update
+  const handleSetDirectPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!manageCredentialsStudent || !manageCredentialsStudent.profile_id) return;
+    if (studentNewPassword.trim().length < 6) {
+      toast.error('Weak Password', 'Password must be at least 6 characters long.');
+      return;
+    }
+    setSubmittingPasswordChange(true);
+    try {
+      const { data, error } = await supabase.rpc('rpc_admin_set_user_password', {
+        p_profile_id: manageCredentialsStudent.profile_id,
+        p_new_password: studentNewPassword.trim()
+      });
+
+      if (error) throw error;
+      if (!data.success) throw new Error(data.error);
+
+      toast.success(
+        'Password Updated Successfully',
+        `New password applied for ${manageCredentialsStudent.email}.`
+      );
+    } catch (err: any) {
+      toast.error('Password Update Failed', err.message);
+    } finally {
+      setSubmittingPasswordChange(false);
+    }
+  };
+
+  // Password Reset PIN / OTP
+  const handleGeneratePin = async () => {
+    if (!manageCredentialsStudent) return;
+    setSubmittingPinReset(true);
     try {
       const { data, error } = await supabase.rpc('rpc_admin_reset_user_password', {
-        p_profile_id: resetModalStudent.profile_id
+        p_profile_id: manageCredentialsStudent.profile_id
       });
 
       if (error) throw error;
@@ -366,8 +447,24 @@ export const StudentDirectory: React.FC = () => {
     } catch (err: any) {
       toast.error('Password Reset Failed', err.message);
     } finally {
-      setResetSubmitting(false);
+      setSubmittingPinReset(false);
     }
+  };
+
+  const generateRandomPassword = () => {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789!@#$%&*';
+    let result = '';
+    for (let i = 0; i < 12; i++) {
+      result += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    setStudentNewPassword(result);
+  };
+
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedPassword(true);
+    setTimeout(() => setCopiedPassword(false), 2000);
+    toast.success('Copied', 'Credential copied to clipboard.');
   };
 
   const totalPages = Math.ceil(totalCount / pageSize) || 1;
@@ -385,13 +482,13 @@ export const StudentDirectory: React.FC = () => {
           </div>
           <h1 className="text-2xl font-black text-slate-900 tracking-tight mt-1">Student Academic Registry</h1>
           <p className="text-xs text-slate-500 font-medium mt-0.5">
-            Indexed search across {totalCount} enrolled students with server-side pagination, section transfers, and statutory threshold monitoring.
+            Manage student records, roll numbers, authentication credentials, class transfers, and attendance thresholds.
           </p>
         </div>
 
         <button
           onClick={() => setShowCreateModal(true)}
-          className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl shadow-sm flex items-center gap-2 transition-all self-start md:self-center"
+          className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl shadow-sm flex items-center gap-2 transition-all self-start md:self-center cursor-pointer"
         >
           <Plus className="h-4 w-4" /> Enroll New Student
         </button>
@@ -426,7 +523,7 @@ export const StudentDirectory: React.FC = () => {
                   setSelectedThreshold(e.target.value);
                   setCurrentPage(1);
                 }}
-                className="py-1.5 px-3 bg-white border border-slate-300 rounded-xl text-xs font-semibold text-slate-700"
+                className="py-1.5 px-3 bg-white border border-slate-300 rounded-xl text-xs font-semibold text-slate-700 cursor-pointer"
               >
                 <option value="">All Attendance</option>
                 <option value="good">Good (≥ 80%)</option>
@@ -446,7 +543,7 @@ export const StudentDirectory: React.FC = () => {
                   setSelectedProgramId('');
                   setCurrentPage(1);
                 }}
-                className="w-full py-1.5 px-2.5 bg-white border border-slate-200 rounded-lg text-[11px] font-semibold text-slate-600"
+                className="w-full py-1.5 px-2.5 bg-white border border-slate-200 rounded-lg text-[11px] font-semibold text-slate-600 cursor-pointer"
               >
                 <option value="">All Departments</option>
                 {departments.map((d) => (
@@ -464,7 +561,7 @@ export const StudentDirectory: React.FC = () => {
                   setSelectedProgramId(e.target.value);
                   setCurrentPage(1);
                 }}
-                className="w-full py-1.5 px-2.5 bg-white border border-slate-200 rounded-lg text-[11px] font-semibold text-slate-600"
+                className="w-full py-1.5 px-2.5 bg-white border border-slate-200 rounded-lg text-[11px] font-semibold text-slate-600 cursor-pointer"
               >
                 <option value="">All Programs</option>
                 {programs
@@ -484,14 +581,16 @@ export const StudentDirectory: React.FC = () => {
                   setSelectedSemesterId(e.target.value);
                   setCurrentPage(1);
                 }}
-                className="w-full py-1.5 px-2.5 bg-white border border-slate-200 rounded-lg text-[11px] font-semibold text-slate-600"
+                className="w-full py-1.5 px-2.5 bg-white border border-slate-200 rounded-lg text-[11px] font-semibold text-slate-600 cursor-pointer"
               >
                 <option value="">All Semesters</option>
-                {semesters.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    Semester {s.semester_number}
-                  </option>
-                ))}
+                {semesters
+                  .filter((s) => !selectedProgramId || s.program_id === selectedProgramId)
+                  .map((s) => (
+                    <option key={s.id} value={s.id}>
+                      Semester {s.semester_number}
+                    </option>
+                  ))}
               </select>
             </div>
 
@@ -502,38 +601,40 @@ export const StudentDirectory: React.FC = () => {
                   setSelectedSectionId(e.target.value);
                   setCurrentPage(1);
                 }}
-                className="w-full py-1.5 px-2.5 bg-white border border-slate-200 rounded-lg text-[11px] font-semibold text-slate-600"
+                className="w-full py-1.5 px-2.5 bg-white border border-slate-200 rounded-lg text-[11px] font-semibold text-slate-600 cursor-pointer"
               >
                 <option value="">All Sections</option>
-                {sections.map((sec) => (
-                  <option key={sec.id} value={sec.id}>
-                    {sec.name}
-                  </option>
-                ))}
+                {sections
+                  .filter((sec) => !selectedSemesterId || sec.semester_id === selectedSemesterId)
+                  .map((sec) => (
+                    <option key={sec.id} value={sec.id}>
+                      Section {sec.name}
+                    </option>
+                  ))}
               </select>
             </div>
           </div>
         </div>
 
-        {/* Students Table */}
+        {/* Table Content */}
         {loading ? (
           <TableSkeleton rows={8} />
         ) : students.length === 0 ? (
           <div className="p-12 text-center">
             <Users className="h-10 w-10 text-slate-300 mx-auto mb-3" />
-            <h3 className="text-sm font-bold text-slate-800">No students match filter criteria</h3>
-            <p className="text-xs text-slate-400 mt-1">Try resetting search filters or enroll a new student.</p>
+            <h3 className="text-sm font-bold text-slate-800">No students found</h3>
+            <p className="text-xs text-slate-400 mt-1">Try adjusting the search criteria or filters.</p>
           </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs text-slate-600">
               <thead className="bg-slate-50 text-slate-500 uppercase font-black text-[10px] tracking-wider border-b border-slate-200">
                 <tr>
-                  <th className="py-3 px-4">Student Details</th>
-                  <th className="py-3 px-4">Roll Number</th>
-                  <th className="py-3 px-4">Academic Placement</th>
-                  <th className="py-3 px-4 text-center">Attendance %</th>
-                  <th className="py-3 px-4">Enrollment</th>
+                  <th className="py-3 px-4">Student</th>
+                  <th className="py-3 px-4">Roll & Reg No.</th>
+                  <th className="py-3 px-4">Class & Section</th>
+                  <th className="py-3 px-4 text-center">Attendance Gauge</th>
+                  <th className="py-3 px-4">Status</th>
                   <th className="py-3 px-4 text-right">Actions</th>
                 </tr>
               </thead>
@@ -541,60 +642,56 @@ export const StudentDirectory: React.FC = () => {
                 {students.map((st) => (
                   <tr key={st.student_id} className="hover:bg-slate-50/80 transition-colors">
                     <td className="py-3 px-4">
-                      <button
-                        onClick={() => handleOpenStudentProfile(st)}
-                        className="font-bold text-slate-900 hover:text-indigo-600 text-left transition-colors"
-                      >
-                        {st.full_name}
-                      </button>
+                      <div className="font-bold text-slate-900">{st.full_name}</div>
                       <div className="text-[11px] text-slate-400 flex items-center gap-1 mt-0.5">
                         <Mail className="h-3 w-3" /> {st.email}
                       </div>
                     </td>
-                    <td className="py-3 px-4 font-mono font-bold text-indigo-700">
-                      {st.roll_number}
+                    <td className="py-3 px-4 font-mono">
+                      <div className="font-bold text-indigo-700">{st.roll_number}</div>
+                      <div className="text-[10px] text-slate-400">{st.registration_number}</div>
                     </td>
                     <td className="py-3 px-4">
                       <div className="font-semibold text-slate-800">
-                        {st.program_name} (Sem {st.semester_number})
+                        {st.program_name} • Sem {st.semester_number}
                       </div>
-                      <div className="text-[11px] text-slate-500">
-                        {st.department_name} • <span className="font-bold text-indigo-600">{st.section_name}</span>
-                      </div>
+                      <div className="text-[11px] text-indigo-600 font-bold">Section {st.section_name}</div>
                     </td>
                     <td className="py-3 px-4 text-center">
-                      <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-black bg-slate-100">
+                      <div className="inline-flex flex-col items-center">
                         <span
-                          className={`h-2 w-2 rounded-full ${
-                            st.threshold_status === 'good'
-                              ? 'bg-emerald-500'
-                              : st.threshold_status === 'warning'
-                              ? 'bg-amber-500'
-                              : 'bg-red-500'
-                          }`}
-                        />
-                        <span
-                          className={
+                          className={`font-black text-xs ${
                             st.threshold_status === 'good'
                               ? 'text-emerald-700'
                               : st.threshold_status === 'warning'
                               ? 'text-amber-700'
                               : 'text-red-700'
-                          }
+                          }`}
                         >
                           {st.overall_attendance_percentage}%
+                        </span>
+                        <span
+                          className={`text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.2 rounded ${
+                            st.threshold_status === 'good'
+                              ? 'bg-emerald-50 text-emerald-600'
+                              : st.threshold_status === 'warning'
+                              ? 'bg-amber-50 text-amber-600'
+                              : 'bg-red-50 text-red-600'
+                          }`}
+                        >
+                          {st.threshold_status}
                         </span>
                       </div>
                     </td>
                     <td className="py-3 px-4">
-                      <StatusBadge status={st.enrollment_status as any} />
+                      <StatusBadge status={st.enrollment_status === 'active' ? 'active' : 'suspended'} />
                     </td>
                     <td className="py-3 px-4 text-right">
                       <div className="flex items-center justify-end gap-1.5">
                         <button
-                          onClick={() => handleOpenStudentProfile(st)}
-                          title="View Attendance Gauge & History"
-                          className="p-1.5 hover:bg-slate-100 text-slate-600 rounded-lg transition-colors border border-slate-200"
+                          onClick={() => handleOpenStudentDetail(st)}
+                          title="View Attendance Breakdown"
+                          className="p-1.5 hover:bg-slate-100 text-slate-500 rounded-lg transition-colors border border-slate-200 cursor-pointer"
                         >
                           <BookOpen className="h-3.5 w-3.5" />
                         </button>
@@ -604,37 +701,45 @@ export const StudentDirectory: React.FC = () => {
                             setTransferTargetSectionId(st.section_id);
                           }}
                           title="Transfer Section / Semester"
-                          className="p-1.5 hover:bg-indigo-50 text-indigo-600 rounded-lg transition-colors border border-indigo-200"
+                          className="p-1.5 hover:bg-indigo-50 text-indigo-600 rounded-lg transition-colors border border-indigo-200 cursor-pointer"
                         >
                           <ArrowRightLeft className="h-3.5 w-3.5" />
                         </button>
                         <button
                           onClick={() => handleOpenEdit(st)}
-                          title="Edit Student Record"
-                          className="p-1.5 hover:bg-slate-100 text-slate-600 rounded-lg transition-colors border border-slate-200"
+                          title="Edit Student Record & ID"
+                          className="p-1.5 hover:bg-slate-100 text-slate-600 rounded-lg transition-colors border border-slate-200 cursor-pointer"
                         >
                           <Edit className="h-3.5 w-3.5" />
                         </button>
                         <button
                           onClick={() => {
-                            setResetModalStudent(st);
+                            setManageCredentialsStudent(st);
+                            setStudentNewPassword('');
                             setIssuedPin(null);
                           }}
-                          title="Issue Password Reset PIN"
-                          className="p-1.5 hover:bg-amber-50 text-amber-600 rounded-lg transition-colors border border-amber-200"
+                          title="Manage ID & Login Password"
+                          className="p-1.5 hover:bg-amber-50 text-amber-600 rounded-lg transition-colors border border-amber-200 cursor-pointer"
                         >
                           <KeyRound className="h-3.5 w-3.5" />
                         </button>
                         <button
                           onClick={() => setStatusToggleStudent(st)}
                           title={st.enrollment_status === 'active' ? 'Deactivate Student' : 'Reactivate Student'}
-                          className={`p-1.5 rounded-lg transition-colors border ${
+                          className={`p-1.5 rounded-lg transition-colors border cursor-pointer ${
                             st.enrollment_status === 'active'
-                              ? 'hover:bg-red-50 text-red-600 border-red-200'
+                              ? 'hover:bg-amber-50 text-amber-600 border-amber-200'
                               : 'hover:bg-emerald-50 text-emerald-600 border-emerald-200'
                           }`}
                         >
                           <ShieldCheck className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          onClick={() => setDeleteConfirmStudent(st)}
+                          title="Delete Student Record"
+                          className="p-1.5 hover:bg-red-50 text-red-600 rounded-lg transition-colors border border-red-200 cursor-pointer"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
                         </button>
                       </div>
                     </td>
@@ -690,13 +795,13 @@ export const StudentDirectory: React.FC = () => {
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="text-[11px] font-bold text-slate-600">Roll Number *</label>
+              <label className="text-[11px] font-bold text-slate-600">Roll Number (Student ID) *</label>
               <input
                 type="text"
                 required
                 value={newRollNumber}
                 onChange={(e) => setNewRollNumber(e.target.value.toUpperCase())}
-                placeholder="e.g. 23CSE089"
+                placeholder="e.g. CS2023024"
                 className="w-full mt-1 p-2 text-xs border border-slate-300 rounded-xl font-mono uppercase focus:ring-2 focus:ring-indigo-500"
               />
             </div>
@@ -706,7 +811,7 @@ export const StudentDirectory: React.FC = () => {
                 type="text"
                 value={newRegNumber}
                 onChange={(e) => setNewRegNumber(e.target.value.toUpperCase())}
-                placeholder="e.g. REG-2023-CS-089"
+                placeholder="REG-2023-0024"
                 className="w-full mt-1 p-2 text-xs border border-slate-300 rounded-xl font-mono uppercase focus:ring-2 focus:ring-indigo-500"
               />
             </div>
@@ -714,7 +819,7 @@ export const StudentDirectory: React.FC = () => {
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="text-[11px] font-bold text-slate-600">Cohort Section *</label>
+              <label className="text-[11px] font-bold text-slate-600">Class Section *</label>
               <select
                 value={newSectionId}
                 onChange={(e) => setNewSectionId(e.target.value)}
@@ -741,7 +846,7 @@ export const StudentDirectory: React.FC = () => {
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="text-[11px] font-bold text-slate-600">Institutional Email *</label>
+              <label className="text-[11px] font-bold text-slate-600">Institutional Email (Login ID) *</label>
               <input
                 type="email"
                 required
@@ -763,18 +868,42 @@ export const StudentDirectory: React.FC = () => {
             </div>
           </div>
 
+          <div>
+            <label className="text-[11px] font-bold text-slate-600 flex items-center justify-between">
+              <span>Initial Login Password *</span>
+              <span className="text-[10px] text-slate-400 font-normal">Min. 6 characters</span>
+            </label>
+            <div className="relative mt-1">
+              <input
+                type={showNewPassword ? 'text' : 'password'}
+                required
+                minLength={6}
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                className="w-full p-2 pr-9 text-xs border border-slate-300 rounded-xl font-mono focus:ring-2 focus:ring-indigo-500"
+              />
+              <button
+                type="button"
+                onClick={() => setShowNewPassword(!showNewPassword)}
+                className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600 cursor-pointer"
+              >
+                {showNewPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+              </button>
+            </div>
+          </div>
+
           <div className="pt-2 flex justify-end gap-2">
             <button
               type="button"
               onClick={() => setShowCreateModal(false)}
-              className="px-4 py-2 border border-slate-200 text-slate-600 text-xs font-bold rounded-xl"
+              className="px-4 py-2 border border-slate-200 text-slate-600 text-xs font-bold rounded-xl cursor-pointer"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={createSubmitting}
-              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl disabled:opacity-50"
+              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl disabled:opacity-50 cursor-pointer"
             >
               {createSubmitting ? 'Enrolling...' : 'Confirm Enrollment'}
             </button>
@@ -783,7 +912,7 @@ export const StudentDirectory: React.FC = () => {
       </Modal>
 
       {/* Edit Student Modal */}
-      <Modal isOpen={!!editingStudent} onClose={() => setEditingStudent(null)} title="Edit Student Record">
+      <Modal isOpen={!!editingStudent} onClose={() => setEditingStudent(null)} title="Edit Student Record & ID">
         <form onSubmit={handleSaveEdit} className="space-y-4">
           <div className="grid grid-cols-2 gap-3">
             <div>
@@ -810,12 +939,34 @@ export const StudentDirectory: React.FC = () => {
 
           <div className="grid grid-cols-2 gap-3">
             <div>
+              <label className="text-[11px] font-bold text-slate-600">Institutional Email (Login ID)</label>
+              <input
+                type="email"
+                required
+                value={editEmail}
+                onChange={(e) => setEditEmail(e.target.value)}
+                className="w-full mt-1 p-2 text-xs border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500"
+              />
+            </div>
+            <div>
               <label className="text-[11px] font-bold text-slate-600">Roll Number</label>
               <input
                 type="text"
                 required
                 value={editRollNumber}
                 onChange={(e) => setEditRollNumber(e.target.value.toUpperCase())}
+                className="w-full mt-1 p-2 text-xs border border-slate-300 rounded-xl font-mono uppercase"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-[11px] font-bold text-slate-600">Registration Number</label>
+              <input
+                type="text"
+                value={editRegNumber}
+                onChange={(e) => setEditRegNumber(e.target.value.toUpperCase())}
                 className="w-full mt-1 p-2 text-xs border border-slate-300 rounded-xl font-mono uppercase"
               />
             </div>
@@ -830,34 +981,178 @@ export const StudentDirectory: React.FC = () => {
             </div>
           </div>
 
-          <div>
-            <label className="text-[11px] font-bold text-slate-600">Phone</label>
-            <input
-              type="tel"
-              value={editPhone}
-              onChange={(e) => setEditPhone(e.target.value)}
-              className="w-full mt-1 p-2 text-xs border border-slate-300 rounded-xl"
-            />
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-[11px] font-bold text-slate-600">Section</label>
+              <select
+                value={editSectionId}
+                onChange={(e) => setEditSectionId(e.target.value)}
+                className="w-full mt-1 p-2 text-xs border border-slate-300 rounded-xl bg-white"
+              >
+                {sections.map((sec) => (
+                  <option key={sec.id} value={sec.id}>
+                    {sec.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="text-[11px] font-bold text-slate-600">Phone</label>
+              <input
+                type="tel"
+                value={editPhone}
+                onChange={(e) => setEditPhone(e.target.value)}
+                className="w-full mt-1 p-2 text-xs border border-slate-300 rounded-xl"
+              />
+            </div>
           </div>
 
           <div className="pt-2 flex justify-end gap-2">
             <button
               type="button"
               onClick={() => setEditingStudent(null)}
-              className="px-4 py-2 border border-slate-200 text-slate-600 text-xs font-bold rounded-xl"
+              className="px-4 py-2 border border-slate-200 text-slate-600 text-xs font-bold rounded-xl cursor-pointer"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={editSubmitting}
-              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl"
+              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl cursor-pointer"
             >
               {editSubmitting ? 'Saving...' : 'Save Updates'}
             </button>
           </div>
         </form>
       </Modal>
+
+      {/* Credential & Password Management Modal */}
+      <Modal
+        isOpen={!!manageCredentialsStudent}
+        onClose={() => {
+          setManageCredentialsStudent(null);
+          setStudentNewPassword('');
+          setIssuedPin(null);
+        }}
+        title={`Credentials & Password: ${manageCredentialsStudent?.full_name}`}
+      >
+        <div className="space-y-4">
+          {/* Identity Card */}
+          <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-1.5 text-xs">
+            <div className="flex items-center justify-between">
+              <span className="text-slate-500 font-medium">Login ID (Email):</span>
+              <span className="font-bold text-slate-900 font-mono">{manageCredentialsStudent?.email}</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-slate-500 font-medium">Roll Number:</span>
+              <span className="font-bold text-indigo-700 font-mono">{manageCredentialsStudent?.roll_number}</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-slate-500 font-medium">Cohort & Section:</span>
+              <span className="font-semibold text-slate-700">{manageCredentialsStudent?.program_name} (Section {manageCredentialsStudent?.section_name})</span>
+            </div>
+          </div>
+
+          {/* Direct Password Form */}
+          <form onSubmit={handleSetDirectPassword} className="space-y-3 pt-1 border-t border-slate-200">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                <Lock className="w-3.5 h-3.5 text-indigo-600" />
+                <span>Set New Login Password</span>
+              </label>
+              <button
+                type="button"
+                onClick={generateRandomPassword}
+                className="text-[11px] text-indigo-600 hover:text-indigo-700 font-bold flex items-center gap-1 cursor-pointer"
+              >
+                <Sparkles className="w-3 h-3 text-amber-500" />
+                <span>Generate Strong</span>
+              </button>
+            </div>
+
+            <div className="relative">
+              <input
+                type={showStudentPassword ? 'text' : 'password'}
+                required
+                minLength={6}
+                value={studentNewPassword}
+                onChange={(e) => setStudentNewPassword(e.target.value)}
+                placeholder="Enter new password (min. 6 characters)"
+                className="w-full p-2.5 pr-20 text-xs border border-slate-300 rounded-xl font-mono focus:ring-2 focus:ring-indigo-500"
+              />
+              <div className="absolute right-2 top-2 flex items-center gap-1">
+                {studentNewPassword && (
+                  <button
+                    type="button"
+                    onClick={() => copyToClipboard(studentNewPassword)}
+                    title="Copy Password"
+                    className="p-1 hover:bg-slate-100 rounded text-slate-400 hover:text-slate-600 cursor-pointer"
+                  >
+                    {copiedPassword ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setShowStudentPassword(!showStudentPassword)}
+                  className="p-1 hover:bg-slate-100 rounded text-slate-400 hover:text-slate-600 cursor-pointer"
+                >
+                  {showStudentPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                </button>
+              </div>
+            </div>
+
+            <p className="text-[11px] text-slate-500 leading-relaxed">
+              Instantly updates the password in Supabase Auth. The student can immediately sign in to their mobile scanner app or web portal.
+            </p>
+
+            <button
+              type="submit"
+              disabled={submittingPasswordChange || !studentNewPassword}
+              className="w-full py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+            >
+              <Key className="w-3.5 h-3.5" />
+              <span>{submittingPasswordChange ? 'Updating Password...' : 'Save & Update Login Password'}</span>
+            </button>
+          </form>
+
+          {/* Secondary Option: Issue OTP PIN */}
+          <div className="pt-3 border-t border-slate-200">
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-slate-500 font-medium">Issue temporary single-use OTP?</span>
+              <button
+                type="button"
+                onClick={handleGeneratePin}
+                disabled={submittingPinReset}
+                className="text-xs text-amber-700 hover:text-amber-800 font-bold cursor-pointer"
+              >
+                {submittingPinReset ? 'Generating...' : 'Issue Reset OTP'}
+              </button>
+            </div>
+
+            {issuedPin && (
+              <div className="mt-2 p-3 bg-amber-50 border border-amber-200 rounded-xl text-center space-y-1">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-amber-700">
+                  Temporary 6-Digit OTP PIN
+                </span>
+                <div className="text-2xl font-mono font-black text-amber-900 tracking-widest">
+                  {issuedPin}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </Modal>
+
+      {/* Delete Student Confirmation */}
+      <ConfirmDialog
+        isOpen={!!deleteConfirmStudent}
+        onClose={() => setDeleteConfirmStudent(null)}
+        onConfirm={handleConfirmDeleteStudent}
+        title="Delete Student Record"
+        message={`Are you sure you want to permanently delete student ${deleteConfirmStudent?.full_name} (${deleteConfirmStudent?.roll_number})? This will permanently delete their registry profile, attendance records, and login credentials.`}
+        confirmLabel={deletingStudent ? 'Deleting...' : 'Delete Permanently'}
+        variant="danger"
+      />
 
       {/* Transfer Section / Semester Modal */}
       <Modal
@@ -901,74 +1196,19 @@ export const StudentDirectory: React.FC = () => {
             <button
               type="button"
               onClick={() => setTransferringStudent(null)}
-              className="px-4 py-2 border border-slate-200 text-slate-600 text-xs font-bold rounded-xl"
+              className="px-4 py-2 border border-slate-200 text-slate-600 text-xs font-bold rounded-xl cursor-pointer"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={transferSubmitting}
-              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl"
+              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl cursor-pointer"
             >
               {transferSubmitting ? 'Transferring...' : 'Execute Section Transfer'}
             </button>
           </div>
         </form>
-      </Modal>
-
-      {/* Password Reset Modal */}
-      <Modal
-        isOpen={!!resetModalStudent}
-        onClose={() => {
-          setResetModalStudent(null);
-          setIssuedPin(null);
-        }}
-        title="Student Password Reset"
-      >
-        <div className="space-y-4">
-          <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800 flex items-start gap-2">
-            <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600 mt-0.5" />
-            <div>
-              <span className="font-bold">Zero Plaintext Exposure Policy:</span> Generating an administrative reset produces a single-use verification PIN logged into security audits.
-            </div>
-          </div>
-
-          <div className="text-xs text-slate-600">
-            Student: <span className="font-bold text-slate-900">{resetModalStudent?.full_name}</span> ({resetModalStudent?.email})
-          </div>
-
-          {issuedPin ? (
-            <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-xl text-center space-y-2">
-              <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-700">
-                Single-Use Reset PIN Issued
-              </span>
-              <div className="text-3xl font-mono font-black text-emerald-900 tracking-widest">
-                {issuedPin}
-              </div>
-              <p className="text-[11px] text-emerald-600 font-medium">
-                Convey this PIN securely to the student. They will be required to set a new password on their mobile app.
-              </p>
-            </div>
-          ) : (
-            <div className="pt-2 flex justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => setResetModalStudent(null)}
-                className="px-4 py-2 border border-slate-200 text-slate-600 text-xs font-bold rounded-xl"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleResetPassword}
-                disabled={resetSubmitting}
-                className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold rounded-xl"
-              >
-                {resetSubmitting ? 'Generating...' : 'Issue Reset PIN'}
-              </button>
-            </div>
-          )}
-        </div>
       </Modal>
 
       {/* Student Profile Detail Modal */}
