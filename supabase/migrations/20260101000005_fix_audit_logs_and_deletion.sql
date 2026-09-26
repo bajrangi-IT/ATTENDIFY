@@ -91,29 +91,23 @@ BEGIN
   -- 4. Delete enrollment history
   DELETE FROM enrollment_history WHERE student_id = v_student_id;
 
-  -- 5. Delete student biometrics / credentials if table exists
-  BEGIN
-    DELETE FROM student_biometrics WHERE student_id = v_student_id;
-  EXCEPTION WHEN OTHERS THEN NULL;
-  END;
-
-  -- 6. Delete notifications & reports for this student profile
+  -- 5. Delete notifications & reports for this student profile
   DELETE FROM notifications WHERE recipient_id = v_profile_id;
   DELETE FROM generated_reports WHERE requester_id = v_profile_id;
 
-  -- 7. Delete student enrollment record
+  -- 6. Delete student enrollment record
   DELETE FROM students WHERE id = v_student_id;
 
-  -- 8. Delete profile record
+  -- 7. Delete profile record
   DELETE FROM profiles WHERE id = v_profile_id;
 
-  -- 9. Delete auth user record if permitted
+  -- 8. Delete auth user record if permitted
   BEGIN
     DELETE FROM auth.users WHERE id = v_profile_id OR lower(email) = lower(v_email);
   EXCEPTION WHEN OTHERS THEN NULL;
   END;
 
-  -- 10. Write immutable audit log entry for this administrative action
+  -- 9. Write immutable audit log entry for this administrative action
   INSERT INTO audit_logs (
     action,
     entity_type,
@@ -192,9 +186,8 @@ BEGIN
   DELETE FROM attendance_records WHERE session_id IN (SELECT id FROM attendance_sessions WHERE faculty_id = v_faculty_id);
   DELETE FROM attendance_sessions WHERE faculty_id = v_faculty_id;
 
-  -- 4. Delete faculty assignments & leave requests
+  -- 4. Delete faculty assignments
   DELETE FROM faculty_assignments WHERE faculty_id = v_faculty_id;
-  DELETE FROM faculty_leave_requests WHERE faculty_id = v_faculty_id;
 
   -- 5. Delete notifications & reports for this faculty profile
   DELETE FROM notifications WHERE recipient_id = v_profile_id;
