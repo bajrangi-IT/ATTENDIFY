@@ -36,6 +36,7 @@ const MainAppContent: React.FC = () => {
     if (typeof window === 'undefined') return false;
     return window.location.pathname.startsWith('/display') || window.location.hash.startsWith('#/display');
   });
+  const [selectedLiveSessionId, setSelectedLiveSessionId] = useState<string | undefined>(undefined);
 
   const getDefaultTabForRole = (r: UserRole): NavTab => {
     switch (r) {
@@ -157,12 +158,15 @@ const MainAppContent: React.FC = () => {
           {/* Teacher Views */}
           {activeTab === 'teacher-dashboard' && (
             <TeacherDashboard
-              onNavigateToSession={() => setActiveTab('live-session')}
+              onNavigateToSession={(sessionId) => {
+                if (sessionId) setSelectedLiveSessionId(sessionId);
+                setActiveTab('live-session');
+              }}
               onNavigateToTimetable={() => setActiveTab('timetable')}
               onNavigateToReports={() => setActiveTab('teacher-reports')}
             />
           )}
-          {activeTab === 'live-session' && <LiveSessionManager />}
+          {activeTab === 'live-session' && <LiveSessionManager initialSessionId={selectedLiveSessionId} />}
           {activeTab === 'teacher-reports' && <TeacherReports />}
 
           {/* Director Views */}

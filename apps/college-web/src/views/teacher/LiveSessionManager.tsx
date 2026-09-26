@@ -41,13 +41,17 @@ interface RosterItem {
   remarks?: string;
 }
 
-export const LiveSessionManager: React.FC = () => {
+interface LiveSessionManagerProps {
+  initialSessionId?: string;
+}
+
+export const LiveSessionManager: React.FC<LiveSessionManagerProps> = ({ initialSessionId }) => {
   const { facultyRecord, profile } = useAuth();
   const toast = useToast();
 
   const [activeSession, setActiveSession] = useState<any | null>(null);
   const [sessionsList, setSessionsList] = useState<any[]>([]);
-  const [selectedSessionId, setSelectedSessionId] = useState<string>('');
+  const [selectedSessionId, setSelectedSessionId] = useState<string>(initialSessionId || '');
   const [roster, setRoster] = useState<RosterItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -92,15 +96,23 @@ export const LiveSessionManager: React.FC = () => {
 
       if (data && data.length > 0) {
         setSessionsList(data);
-        const inProgress = data.find((s) => s.status === 'in_progress') || data[0];
-        setSelectedSessionId(inProgress.id);
-        setActiveSession(inProgress);
+        const target = (initialSessionId && data.find((s) => s.id === initialSessionId))
+          || data.find((s) => s.status === 'in_progress')
+          || data[0];
+        setSelectedSessionId(target.id);
+        setActiveSession(target);
       }
     } catch (err: any) {
       console.error('Error fetching sessions:', err);
       toast.error('Failed to load attendance sessions', err.message);
     }
-  }, [toast]);
+  }, [initialSessionId, toast]);
+
+  useEffect(() => {
+    if (initialSessionId) {
+      setSelectedSessionId(initialSessionId);
+    }
+  }, [initialSessionId]);
 
   useEffect(() => {
     fetchSessions();
@@ -322,14 +334,27 @@ export const LiveSessionManager: React.FC = () => {
         return;
       }
 
+      const updatePayload: any = {
+        status: newStatus,
+        updated_at: new Date().toISOString(),
+      };
+      if (newStatus === 'in_progress') {
+        updatePayload.is_attendance_locked = false;
+        updatePayload.qr_expires_at = new Date(Date.now() + 36000000).toISOString();
+      }
+
       const { error } = await supabase
         .from('attendance_sessions')
-        .update({ status: newStatus, updated_at: new Date().toISOString() })
+        .update(updatePayload)
         .eq('id', activeSession.id);
 
       if (error) throw error;
 
-      setActiveSession((prev: any) => ({ ...prev, status: newStatus }));
+      setActiveSession((prev: any) => ({
+        ...prev,
+        status: newStatus,
+        ...(newStatus === 'in_progress' ? { is_attendance_locked: false } : {}),
+      }));
       toast.success(`Session status updated to ${newStatus}`);
       fetchSessions();
     } catch (err: any) {

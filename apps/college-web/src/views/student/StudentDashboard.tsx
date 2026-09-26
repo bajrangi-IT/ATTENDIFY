@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import jsQR from 'jsqr';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
@@ -101,6 +102,12 @@ export const StudentDashboard: React.FC = () => {
   const [isScanning, setIsScanning] = useState(false);
   const [scanSuccess, setScanSuccess] = useState<any | null>(null);
   const [scanError, setScanError] = useState<string | null>(null);
+  const [cameraActive, setCameraActive] = useState(false);
+  const [cameraError, setCameraError] = useState<string | null>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const animationFrameRef = useRef<number | null>(null);
 
   const fetchStudentData = async () => {
     try {
@@ -243,8 +250,91 @@ export const StudentDashboard: React.FC = () => {
     }
   };
 
-  // Perform dynamic QR scan and record attendance
-  const handlePerformScan = async () => {
+  // Camera Scanning Loop
+  const stopCamera = () => {
+    if (animationFrameRef.current) {
+      cancelAnimationFrame(animationFrameRef.current);
+      animationFrameRef.current = null;
+    }
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
+    }
+    setCameraActive(false);
+  };
+
+  const startCamera = async () => {
+    setCameraError(null);
+    try {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        throw new Error('Camera stream not supported in this browser. Use 1-click verification below.');
+      }
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'environment', width: { ideal: 640 }, height: { ideal: 480 } }
+      });
+      streamRef.current = stream;
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        videoRef.current.setAttribute('playsinline', 'true');
+        await videoRef.current.play();
+        setCameraActive(true);
+        animationFrameRef.current = requestAnimationFrame(tickScan);
+      }
+    } catch (err: any) {
+      console.warn('Camera access error:', err);
+      setCameraError(err.message || 'Unable to access device camera. Please allow camera permissions or use 1-click verify below.');
+    }
+  };
+
+  const tickScan = () => {
+    if (!videoRef.current || videoRef.current.readyState !== videoRef.current.HAVE_ENOUGH_DATA) {
+      animationFrameRef.current = requestAnimationFrame(tickScan);
+      return;
+    }
+
+    if (!canvasRef.current) {
+      canvasRef.current = document.createElement('canvas');
+    }
+    const canvas = canvasRef.current;
+    const video = videoRef.current;
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    if (ctx) {
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const code = jsQR(imageData.data, imageData.width, imageData.height, {
+        inversionAttempts: 'dontInvert',
+      });
+
+      if (code && code.data) {
+        // QR detected!
+        try {
+          if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
+        } catch (_) {}
+        stopCamera();
+        handlePerformScan(code.data);
+        return;
+      }
+    }
+
+    animationFrameRef.current = requestAnimationFrame(tickScan);
+  };
+
+  // Start camera when isScannerOpen turns true, stop when false
+  useEffect(() => {
+    if (isScannerOpen && !scanSuccess) {
+      startCamera();
+    } else {
+      stopCamera();
+    }
+    return () => {
+      stopCamera();
+    };
+  }, [isScannerOpen, scanSuccess]);
+
+  // Perform dynamic QR scan and record attendance (from Camera or Fallback)
+  const handlePerformScan = async (scannedDataString?: string) => {
     if (!activeLecture) {
       setScanError('No active lecture in progress');
       return;
@@ -259,16 +349,26 @@ export const StudentDashboard: React.FC = () => {
       let qrToken = 'demo-qr-token';
       let epochWindow = Math.floor(Date.now() / 15000);
 
-      try {
-        const { data: displayState } = await supabase.rpc('rpc_get_smart_display_state', {
-          p_classroom_id: activeLecture.classroom_id || '70000000-0000-0000-0000-000000000001',
-        });
-        if (displayState?.active_session?.qr_token) {
-          qrToken = displayState.active_session.qr_token;
-          epochWindow = displayState.active_session.epoch_window;
+      if (scannedDataString) {
+        try {
+          const parsed = JSON.parse(scannedDataString);
+          if (parsed.token) qrToken = parsed.token;
+          if (parsed.epoch_window) epochWindow = parsed.epoch_window;
+        } catch {
+          qrToken = scannedDataString;
         }
-      } catch (e) {
-        console.warn('Could not read display token, proceeding with direct check-in', e);
+      } else {
+        try {
+          const { data: displayState } = await supabase.rpc('rpc_get_smart_display_state', {
+            p_classroom_id: activeLecture.classroom_id || '70000000-0000-0000-0000-000000000001',
+          });
+          if (displayState?.active_session?.qr_token) {
+            qrToken = displayState.active_session.qr_token;
+            epochWindow = displayState.active_session.epoch_window;
+          }
+        } catch (e) {
+          console.warn('Could not read display token, proceeding with direct check-in', e);
+        }
       }
 
       const studentId = studentInfo?.id || '90000000-0000-0000-0000-000000000001';
@@ -1102,27 +1202,58 @@ export const StudentDashboard: React.FC = () => {
                   </div>
                 )}
 
-                {/* Viewfinder simulation box */}
-                <div className="relative aspect-video bg-slate-950 rounded-2xl border-2 border-indigo-500/40 overflow-hidden flex flex-col items-center justify-center p-4">
-                  {/* Scanner laser overlay animation */}
-                  <div className="absolute inset-x-8 top-1/4 bottom-1/4 border-2 border-emerald-400/80 rounded-2xl flex items-center justify-center">
-                    <div className="w-full h-0.5 bg-emerald-400 shadow-lg shadow-emerald-400 animate-pulse" />
-                  </div>
-                  <Camera className="w-12 h-12 text-slate-700 mb-2" />
-                  <p className="text-slate-400 text-xs font-medium z-10">Point camera at Smart Board on /display</p>
-                  <p className="text-[10px] text-slate-500 z-10">Instant Anti-Proxy Dynamic Handshake</p>
+                {/* Real Camera Viewfinder */}
+                <div className="relative aspect-video bg-slate-950 rounded-2xl border-2 border-emerald-500/40 overflow-hidden flex flex-col items-center justify-center">
+                  <video
+                    ref={videoRef}
+                    playsInline
+                    autoPlay
+                    muted
+                    className={`w-full h-full object-cover ${cameraActive ? 'block' : 'hidden'}`}
+                  />
+
+                  {/* Fallback when camera is loading or permission not granted */}
+                  {!cameraActive && (
+                    <div className="flex flex-col items-center justify-center p-6 text-center space-y-2">
+                      <div className="w-12 h-12 rounded-2xl bg-slate-900 border border-slate-700 flex items-center justify-center text-slate-400">
+                        <Camera className="w-6 h-6 animate-pulse" />
+                      </div>
+                      <p className="text-slate-200 text-xs font-bold">
+                        {cameraError ? 'Camera Notice' : 'Activating Device Camera...'}
+                      </p>
+                      <p className="text-[11px] text-slate-400 max-w-xs">
+                        {cameraError || 'Allow camera permissions to scan the Smart Board QR on /display.'}
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Scanning Reticle & Laser Overlay */}
+                  {cameraActive && (
+                    <div className="absolute inset-0 pointer-events-none flex flex-col items-center justify-center">
+                      <div className="w-44 h-44 sm:w-52 sm:h-52 border-2 border-emerald-400/90 rounded-2xl relative shadow-2xl flex items-center justify-center">
+                        <div className="absolute top-0 left-0 w-4 h-4 border-t-4 border-l-4 border-emerald-400 -mt-0.5 -ml-0.5 rounded-tl" />
+                        <div className="absolute top-0 right-0 w-4 h-4 border-t-4 border-r-4 border-emerald-400 -mt-0.5 -mr-0.5 rounded-tr" />
+                        <div className="absolute bottom-0 left-0 w-4 h-4 border-b-4 border-l-4 border-emerald-400 -mb-0.5 -ml-0.5 rounded-bl" />
+                        <div className="absolute bottom-0 right-0 w-4 h-4 border-b-4 border-r-4 border-emerald-400 -mb-0.5 -mr-0.5 rounded-br" />
+                        <div className="w-full h-0.5 bg-emerald-400 shadow-lg shadow-emerald-400 animate-pulse" />
+                      </div>
+                      <span className="text-[10px] font-bold text-white bg-slate-950/80 border border-emerald-500/40 px-3 py-1 rounded-full mt-3 backdrop-blur-sm">
+                        Point at QR code on classroom Smart Board (/display)
+                      </span>
+                    </div>
+                  )}
                 </div>
 
                 <div className="space-y-2">
                   <button
-                    onClick={handlePerformScan}
+                    onClick={() => handlePerformScan()}
                     disabled={isScanning}
                     className="w-full py-3.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 active:scale-[0.99] text-white font-bold text-xs flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/30 transition disabled:opacity-50 cursor-pointer"
                   >
                     {isScanning ? (
                       <>
                         <RefreshCw className="w-4 h-4 animate-spin" />
-                        <span>Verifying QR Token with Campus Node...</span>
+                        <span>Verifying & Syncing with Smart Board...</span>
                       </>
                     ) : (
                       <>
@@ -1133,7 +1264,7 @@ export const StudentDashboard: React.FC = () => {
                   </button>
 
                   <p className="text-[10px] text-slate-500 text-center">
-                    Submits anti-proxy session signature & updates headcount live on the classroom board.
+                    Instant sync: Attendance is recorded, and your name appears live on the classroom Smart Board screen.
                   </p>
                 </div>
               </div>

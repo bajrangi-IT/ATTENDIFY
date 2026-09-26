@@ -112,6 +112,44 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
     loadTeacherData();
   }, [facultyRecord, toast]);
 
+  const handleStartAttendanceSession = async (customSessionId?: string | null) => {
+    try {
+      let targetId = customSessionId || stats.activeSessionId;
+      if (!targetId) {
+        // Query latest session for classroom LH-101
+        const { data: latestSess } = await supabase
+          .from('attendance_sessions')
+          .select('id')
+          .order('session_date', { ascending: false })
+          .order('start_time', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        targetId = latestSess?.id || 'c0000000-0000-0000-0000-000000000099';
+      }
+
+      await supabase
+        .from('attendance_sessions')
+        .update({
+          status: 'in_progress',
+          is_attendance_locked: false,
+          qr_expires_at: new Date(Date.now() + 36000000).toISOString(),
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', targetId);
+
+      toast.success(
+        'Class Attendance Activated!',
+        'Room LH-101 pairing code PAIR99 is active and ready on /display.'
+      );
+
+      onNavigateToSession?.(targetId || undefined);
+    } catch (err: any) {
+      console.warn('Error activating session:', err);
+      onNavigateToSession?.();
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Welcome Banner */}
@@ -130,8 +168,8 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
 
         <div className="flex items-center gap-3">
           <button
-            onClick={() => onNavigateToSession?.(stats.activeSessionId || undefined)}
-            className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-xl shadow-lg shadow-indigo-600/30 flex items-center gap-2 transition-all"
+            onClick={() => handleStartAttendanceSession(stats.activeSessionId || undefined)}
+            className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-xl shadow-lg shadow-indigo-600/30 flex items-center gap-2 transition-all cursor-pointer"
           >
             <Radio className="h-4 w-4" />
             {stats.activeSessionId ? 'Open Active Live Session' : 'Conduct New Session'}
@@ -232,7 +270,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                     </div>
 
                     <button
-                      onClick={() => onNavigateToSession?.()}
+                      onClick={() => handleStartAttendanceSession()}
                       className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-xl shadow-sm flex items-center gap-1.5 transition-all cursor-pointer"
                     >
                       <Radio className="h-3.5 w-3.5 text-indigo-200 animate-pulse" />
@@ -293,7 +331,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                     </div>
 
                     <button
-                      onClick={() => onNavigateToSession?.()}
+                      onClick={() => handleStartAttendanceSession()}
                       className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-xl shadow-sm flex items-center gap-1.5 transition-all cursor-pointer"
                     >
                       <Radio className="h-3.5 w-3.5 text-indigo-200 animate-pulse" />
