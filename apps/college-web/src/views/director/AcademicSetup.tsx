@@ -18,19 +18,23 @@ import {
   Clock,
   Sparkles,
   Edit,
-  Tag
+  Tag,
+  DoorOpen,
+  LayoutGrid
 } from 'lucide-react';
 
 export const AcademicSetup: React.FC = () => {
   const toast = useToast();
   const { profile, institution, currentInstitutionId } = useAuth();
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'hierarchy' | 'subjects' | 'years' | 'offerings'>('hierarchy');
+  const [activeTab, setActiveTab] = useState<'hierarchy' | 'classrooms' | 'subjects' | 'years' | 'offerings'>('hierarchy');
 
   const [departments, setDepartments] = useState<any[]>([]);
   const [programs, setPrograms] = useState<any[]>([]);
   const [semesters, setSemesters] = useState<any[]>([]);
   const [sections, setSections] = useState<any[]>([]);
+  const [classrooms, setClassrooms] = useState<any[]>([]);
+  const [campuses, setCampuses] = useState<any[]>([]);
   const [subjects, setSubjects] = useState<any[]>([]);
   const [academicYears, setAcademicYears] = useState<any[]>([]);
   const [subjectOfferings, setSubjectOfferings] = useState<any[]>([]);
@@ -45,6 +49,16 @@ export const AcademicSetup: React.FC = () => {
   const [progName, setProgName] = useState('');
   const [progCode, setProgCode] = useState('');
   const [progDeptId, setProgDeptId] = useState('');
+  const [progDegreeLevel, setProgDegreeLevel] = useState('undergraduate');
+  const [progDuration, setProgDuration] = useState(8);
+
+  // Classroom Modal
+  const [showClassroomModal, setShowClassroomModal] = useState(false);
+  const [roomNumber, setRoomNumber] = useState('');
+  const [roomBuilding, setRoomBuilding] = useState('');
+  const [roomFloor, setRoomFloor] = useState(1);
+  const [roomCapacity, setRoomCapacity] = useState(60);
+  const [roomCampusId, setRoomCampusId] = useState('');
 
   // Subject Modal
   const [showSubjectModal, setShowSubjectModal] = useState(false);
@@ -84,11 +98,13 @@ export const AcademicSetup: React.FC = () => {
         { data: secs, error: sErr },
         { data: subs },
         { data: years, error: yErr },
-        { data: offers }
+        { data: offers },
+        { data: rooms },
+        { data: camps }
       ] = await Promise.all([
         supabase.from('departments').select('*, hod:profiles(*)').eq('institution_id', instId).order('name'),
         supabase.from('programs').select('*, department:departments(name, code)').order('name'),
-        supabase.from('semesters').select('*, program:programs(name, code)').order('semester_number'),
+        supabase.from('semesters').select('*, program:programs(name, code), academic_year:academic_years(name)').order('semester_number'),
         supabase.from('sections').select('*, semester:semesters(semester_number, program:programs(name, code))').order('name'),
         supabase.from('subjects').select('*, department:departments(name, code)').order('code'),
         supabase.from('academic_years').select('*').eq('institution_id', instId).order('start_date', { ascending: false }),
@@ -97,7 +113,9 @@ export const AcademicSetup: React.FC = () => {
           subject:subjects(id, name, code, credits),
           semester:semesters(id, semester_number, program:programs(name, code)),
           academic_year:academic_years(name)
-        `)
+        `),
+        supabase.from('classrooms').select('*, campus:campuses(name)').order('room_number'),
+        supabase.from('campuses').select('*').order('name')
       ]);
 
       if (dErr) throw dErr;
@@ -112,13 +130,18 @@ export const AcademicSetup: React.FC = () => {
       setSubjects(subs || []);
       setAcademicYears(years || []);
       setSubjectOfferings(offers || []);
+      setClassrooms(rooms || []);
+      setCampuses(camps || []);
 
       if (depts && depts.length > 0) {
         if (!progDeptId) setProgDeptId(depts[0].id);
         if (!subjectDeptId) setSubjectDeptId(depts[0].id);
       }
-      if (sems && sems.length > 0 && !sectionSemesterId) {
-        setSectionSemesterId(sems[0].id);
+      if (camps && camps.length > 0 && !roomCampusId) {
+        setRoomCampusId(camps[0].id);
+      }
+      if (sems && sems.length > 0) {
+        setSectionSemesterId((prev) => prev || sems[0].id);
       }
       if (subs && subs.length > 0 && !offeringSubjectId) {
         setOfferingSubjectId(subs[0].id);
@@ -137,6 +160,59 @@ export const AcademicSetup: React.FC = () => {
   useEffect(() => {
     fetchData();
   }, [profile?.institution_id, currentInstitutionId]);
+
+  const handleAutoGenerateSemesters = async () => {
+    try {
+      setLoading(true);
+      let activeYearId = academicYears.find((y) => y.is_current)?.id || academicYears[0]?.id;
+      if (!activeYearId) {
+        const instId = profile?.institution_id || currentInstitutionId || DEFAULT_INSTITUTION_ID;
+        const { data: newYear, error: yErr } = await supabase
+          .from('academic_years')
+          .insert({
+            institution_id: instId,
+            name: '2025-2026',
+            start_date: '2025-08-01',
+            end_date: '2026-06-30',
+            is_current: true
+          })
+          .select()
+          .single();
+        if (yErr) throw yErr;
+        activeYearId = newYear.id;
+      }
+
+      const rowsToInsert: any[] = [];
+      for (const prog of programs) {
+        const duration = prog.duration_semesters || 8;
+        for (let s = 1; s <= duration; s++) {
+          const exists = semesters.some((sem) => sem.program_id === prog.id && sem.semester_number === s);
+          if (!exists) {
+            rowsToInsert.push({
+              program_id: prog.id,
+              academic_year_id: activeYearId,
+              semester_number: s,
+              is_active: true
+            });
+          }
+        }
+      }
+
+      if (rowsToInsert.length > 0) {
+        const { error } = await supabase.from('semesters').insert(rowsToInsert);
+        if (error) throw error;
+        toast.success('Semesters Generated', `Successfully provisioned ${rowsToInsert.length} semesters.`);
+      } else {
+        toast.info('Semesters Present', 'All programs already have active semesters configured.');
+      }
+      await fetchData();
+    } catch (err: any) {
+      console.error('Error generating semesters:', err);
+      toast.error('Failed to generate semesters', err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleCreateDepartment = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -162,22 +238,66 @@ export const AcademicSetup: React.FC = () => {
   const handleCreateProgram = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const { error } = await supabase.from('programs').insert({
-        department_id: progDeptId,
-        name: progName.trim(),
-        code: progCode.trim().toUpperCase(),
-        degree_level: 'undergraduate',
-        duration_semesters: 8,
-      });
+      const duration = Number(progDuration) || 8;
+      const { data: newProg, error } = await supabase
+        .from('programs')
+        .insert({
+          department_id: progDeptId,
+          name: progName.trim(),
+          code: progCode.trim().toUpperCase(),
+          degree_level: progDegreeLevel,
+          duration_semesters: duration,
+        })
+        .select()
+        .single();
       if (error) throw error;
 
-      toast.success('Program Created', `${progName} added.`);
+      // Automatically provision semesters for the newly created program
+      let activeYearId = academicYears.find((y) => y.is_current)?.id || academicYears[0]?.id;
+      if (newProg && activeYearId) {
+        const semRows = [];
+        for (let i = 1; i <= duration; i++) {
+          semRows.push({
+            program_id: newProg.id,
+            academic_year_id: activeYearId,
+            semester_number: i,
+            is_active: true
+          });
+        }
+        await supabase.from('semesters').insert(semRows);
+      }
+
+      toast.success('Program Created', `${progName} added with ${duration} semesters provisioned.`);
       setShowProgramModal(false);
       setProgName('');
       setProgCode('');
       fetchData();
     } catch (err: any) {
       toast.error('Failed to create program', err.message);
+    }
+  };
+
+  const handleCreateClassroom = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      const campId = roomCampusId || campuses[0]?.id || '10000000-0000-0000-0000-000000000001';
+      const { error } = await supabase.from('classrooms').insert({
+        campus_id: campId,
+        room_number: roomNumber.trim().toUpperCase(),
+        building: roomBuilding.trim(),
+        floor: Number(roomFloor) || 1,
+        capacity: Number(roomCapacity) || 60,
+        is_active: true
+      });
+      if (error) throw error;
+
+      toast.success('Classroom Registered', `Room ${roomNumber} in ${roomBuilding} created.`);
+      setShowClassroomModal(false);
+      setRoomNumber('');
+      setRoomBuilding('');
+      fetchData();
+    } catch (err: any) {
+      toast.error('Failed to create classroom', err.message);
     }
   };
 
@@ -228,14 +348,23 @@ export const AcademicSetup: React.FC = () => {
   const handleCreateSection = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
+      let semId = sectionSemesterId;
+      if (!semId && semesters.length > 0) {
+        semId = semesters[0].id;
+      }
+      if (!semId) {
+        toast.error('Semester Required', 'No semester selected. Please auto-generate semesters first.');
+        return;
+      }
+
       const { error } = await supabase.from('sections').insert({
-        semester_id: sectionSemesterId,
+        semester_id: semId,
         name: sectionName.trim(),
         capacity: Number(sectionCapacity)
       });
       if (error) throw error;
 
-      toast.success('Section Created', `${sectionName} added to semester.`);
+      toast.success('Class / Section Created', `${sectionName} added to semester.`);
       setShowSectionModal(false);
       setSectionName('');
       fetchData();
@@ -281,14 +410,22 @@ export const AcademicSetup: React.FC = () => {
         </div>
 
         {/* Tab Navigation */}
-        <div className="flex bg-slate-100 p-1 rounded-xl text-xs font-bold text-slate-600">
+        <div className="flex flex-wrap bg-slate-100 p-1 rounded-xl text-xs font-bold text-slate-600 gap-1">
           <button
             onClick={() => setActiveTab('hierarchy')}
             className={`px-3 py-1.5 rounded-lg transition-all ${
               activeTab === 'hierarchy' ? 'bg-white text-slate-900 shadow-sm' : 'hover:text-slate-900'
             }`}
           >
-            Departments & Programs
+            Structure & Hierarchy
+          </button>
+          <button
+            onClick={() => setActiveTab('classrooms')}
+            className={`px-3 py-1.5 rounded-lg transition-all ${
+              activeTab === 'classrooms' ? 'bg-white text-slate-900 shadow-sm' : 'hover:text-slate-900'
+            }`}
+          >
+            Classrooms & Labs ({classrooms.length})
           </button>
           <button
             onClick={() => setActiveTab('subjects')}
@@ -317,10 +454,10 @@ export const AcademicSetup: React.FC = () => {
         </div>
       </div>
 
-      {/* Tab 1: Hierarchy (Depts, Programs, Sections) */}
+      {/* Tab 1: Hierarchy (Depts, Programs, Sections, Classrooms) */}
       {activeTab === 'hierarchy' && (
         <div className="space-y-6">
-          <div className="flex justify-end gap-2">
+          <div className="flex flex-wrap justify-end gap-2">
             <button
               onClick={() => setShowDeptModal(true)}
               className="px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-xl shadow-sm flex items-center gap-1.5"
@@ -334,23 +471,52 @@ export const AcademicSetup: React.FC = () => {
               <Plus className="h-4 w-4" /> Add Program
             </button>
             <button
-              onClick={() => setShowSectionModal(true)}
+              onClick={() => {
+                if (!sectionSemesterId && semesters.length > 0) {
+                  setSectionSemesterId(semesters[0].id);
+                }
+                setShowSectionModal(true);
+              }}
               className="px-3.5 py-2 bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold rounded-xl shadow-sm flex items-center gap-1.5"
             >
-              <Plus className="h-4 w-4" /> Add Section
+              <Plus className="h-4 w-4" /> Add Class / Section
             </button>
+            <button
+              onClick={() => setShowClassroomModal(true)}
+              className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-sm flex items-center gap-1.5"
+            >
+              <Plus className="h-4 w-4" /> Add Classroom / Hall
+            </button>
+            {semesters.length === 0 && (
+              <button
+                onClick={handleAutoGenerateSemesters}
+                className="px-3.5 py-2 bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold rounded-xl shadow-sm flex items-center gap-1.5"
+              >
+                <Sparkles className="h-4 w-4" /> Generate Semesters
+              </button>
+            )}
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {/* Departments */}
             <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm">
-              <h2 className="text-sm font-bold text-slate-900 mb-4 flex items-center gap-2">
-                <Building2 className="h-4 w-4 text-indigo-600" /> Academic Departments ({departments.length})
-              </h2>
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                  <Building2 className="h-4 w-4 text-indigo-600" /> Academic Departments ({departments.length})
+                </h2>
+                <button
+                  onClick={() => setShowDeptModal(true)}
+                  className="text-xs font-bold text-indigo-600 hover:underline flex items-center gap-1"
+                >
+                  <Plus className="h-3.5 w-3.5" /> Add
+                </button>
+              </div>
               {loading ? (
                 <TableSkeleton rows={4} columns={2} />
+              ) : departments.length === 0 ? (
+                <div className="text-center py-6 text-xs text-slate-400">No departments added yet.</div>
               ) : (
-                <div className="space-y-2.5">
+                <div className="space-y-2.5 max-h-[340px] overflow-y-auto pr-1">
                   {departments.map((d) => (
                     <div key={d.id} className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between">
                       <div>
@@ -370,13 +536,23 @@ export const AcademicSetup: React.FC = () => {
 
             {/* Degree Programs */}
             <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm">
-              <h2 className="text-sm font-bold text-slate-900 mb-4 flex items-center gap-2">
-                <GraduationCap className="h-4 w-4 text-purple-600" /> Degree Programs ({programs.length})
-              </h2>
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                  <GraduationCap className="h-4 w-4 text-purple-600" /> Degree Programs ({programs.length})
+                </h2>
+                <button
+                  onClick={() => setShowProgramModal(true)}
+                  className="text-xs font-bold text-purple-600 hover:underline flex items-center gap-1"
+                >
+                  <Plus className="h-3.5 w-3.5" /> Add
+                </button>
+              </div>
               {loading ? (
                 <TableSkeleton rows={4} columns={2} />
+              ) : programs.length === 0 ? (
+                <div className="text-center py-6 text-xs text-slate-400">No degree programs added yet.</div>
               ) : (
-                <div className="space-y-2.5">
+                <div className="space-y-2.5 max-h-[340px] overflow-y-auto pr-1">
                   {programs.map((p) => (
                     <div key={p.id} className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between">
                       <div>
@@ -385,7 +561,7 @@ export const AcademicSetup: React.FC = () => {
                           <span className="font-bold text-xs text-slate-800">{p.name}</span>
                         </div>
                         <p className="text-[11px] text-slate-500 mt-0.5">
-                          {p.department?.name} • 8 Semesters
+                          {p.department?.name || 'Academic Dept'} • {p.duration_semesters || 8} Semesters
                         </p>
                       </div>
                     </div>
@@ -395,22 +571,158 @@ export const AcademicSetup: React.FC = () => {
             </div>
           </div>
 
-          {/* Active Sections */}
+          {/* Active Classes / Cohort Sections */}
           <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm">
-            <h2 className="text-sm font-bold text-slate-900 mb-4 flex items-center gap-2">
-              <Layers className="h-4 w-4 text-indigo-600" /> Active Cohort Sections ({sections.length})
-            </h2>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              {sections.map((sec) => (
-                <div key={sec.id} className="p-4 bg-slate-50 border border-slate-200 rounded-xl">
-                  <span className="text-xs font-bold text-indigo-600">
-                    {sec.semester?.program?.code} (Sem {sec.semester?.semester_number})
-                  </span>
-                  <h3 className="font-bold text-sm text-slate-900 mt-0.5">{sec.name}</h3>
-                  <p className="text-[11px] text-slate-500 mt-1">Capacity: {sec.capacity} Enrolled Students</p>
-                </div>
-              ))}
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                  <Layers className="h-4 w-4 text-purple-600" /> Active Classes & Cohort Sections ({sections.length})
+                </h2>
+                <p className="text-xs text-slate-500 mt-0.5">Student batches enrolled per semester and degree program.</p>
+              </div>
+              <button
+                onClick={() => {
+                  if (!sectionSemesterId && semesters.length > 0) {
+                    setSectionSemesterId(semesters[0].id);
+                  }
+                  setShowSectionModal(true);
+                }}
+                className="px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold rounded-lg shadow-sm flex items-center gap-1.5"
+              >
+                <Plus className="h-3.5 w-3.5" /> Add Class / Section
+              </button>
             </div>
+            {sections.length === 0 ? (
+              <div className="p-6 bg-slate-50 border border-slate-200 border-dashed rounded-xl text-center">
+                <p className="text-xs text-slate-500 font-medium">No class sections registered yet.</p>
+                <button
+                  onClick={() => setShowSectionModal(true)}
+                  className="mt-2 text-xs font-bold text-purple-600 hover:underline inline-flex items-center gap-1"
+                >
+                  <Plus className="h-3.5 w-3.5" /> Click here to create your first class section
+                </button>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                {sections.map((sec) => (
+                  <div key={sec.id} className="p-4 bg-slate-50 border border-slate-200 rounded-xl hover:border-purple-300 transition-all">
+                    <span className="text-xs font-bold text-purple-700">
+                      {sec.semester?.program?.name || sec.semester?.program?.code || 'Degree'} (Sem {sec.semester?.semester_number})
+                    </span>
+                    <h3 className="font-bold text-sm text-slate-900 mt-0.5">{sec.name}</h3>
+                    <p className="text-[11px] text-slate-500 mt-1">Capacity: {sec.capacity} Enrolled Students</p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Campus Classrooms & Lecture Halls */}
+          <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                  <DoorOpen className="h-4 w-4 text-emerald-600" /> Physical Classrooms & Lecture Halls ({classrooms.length})
+                </h2>
+                <p className="text-xs text-slate-500 mt-0.5">Physical lecture rooms, computing labs, and tutorial rooms on campus.</p>
+              </div>
+              <button
+                onClick={() => setShowClassroomModal(true)}
+                className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg shadow-sm flex items-center gap-1.5"
+              >
+                <Plus className="h-3.5 w-3.5" /> Add Classroom / Hall
+              </button>
+            </div>
+            {classrooms.length === 0 ? (
+              <div className="p-6 bg-slate-50 border border-slate-200 border-dashed rounded-xl text-center">
+                <p className="text-xs text-slate-500 font-medium">No classrooms configured yet.</p>
+                <button
+                  onClick={() => setShowClassroomModal(true)}
+                  className="mt-2 text-xs font-bold text-emerald-600 hover:underline inline-flex items-center gap-1"
+                >
+                  <Plus className="h-3.5 w-3.5" /> Add a classroom or lecture hall
+                </button>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                {classrooms.slice(0, 8).map((room) => (
+                  <div key={room.id} className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl hover:border-emerald-300 transition-all">
+                    <div className="flex items-center justify-between">
+                      <span className="font-mono font-bold text-xs text-emerald-700 px-2 py-0.5 bg-emerald-50 border border-emerald-200 rounded">
+                        {room.room_number}
+                      </span>
+                      <span className="text-[10px] font-bold text-slate-500">{room.capacity} seats</span>
+                    </div>
+                    <h3 className="font-bold text-xs text-slate-900 mt-1.5 truncate">{room.building}</h3>
+                    <p className="text-[10px] text-slate-500">Floor {room.floor || 1} • {room.campus?.name || 'Main Campus'}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+            {classrooms.length > 8 && (
+              <div className="mt-3 text-right">
+                <button
+                  onClick={() => setActiveTab('classrooms')}
+                  className="text-xs font-bold text-emerald-700 hover:underline"
+                >
+                  View all {classrooms.length} classrooms & labs →
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Tab: Classrooms & Labs Dedicated View */}
+      {activeTab === 'classrooms' && (
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div>
+              <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                <DoorOpen className="h-5 w-5 text-emerald-600" /> Physical Classrooms, Labs & Lecture Halls ({classrooms.length})
+              </h2>
+              <p className="text-xs text-slate-500">Rooms assigned for lectures, tutorials, practicals, and automated biometric kiosk attendance.</p>
+            </div>
+            <button
+              onClick={() => setShowClassroomModal(true)}
+              className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-sm flex items-center gap-1.5 self-start sm:self-auto"
+            >
+              <Plus className="h-4 w-4" /> Add Classroom / Hall
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {classrooms.map((room) => (
+              <div key={room.id} className="p-4 bg-slate-50 border border-slate-200 rounded-xl hover:border-slate-300 transition-all flex flex-col justify-between">
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="font-mono font-bold text-sm text-emerald-700 px-2.5 py-1 bg-emerald-50 border border-emerald-200 rounded-lg">
+                      {room.room_number}
+                    </span>
+                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                      room.is_active ? 'bg-green-100 text-green-700' : 'bg-slate-200 text-slate-600'
+                    }`}>
+                      {room.is_active ? 'Active' : 'Inactive'}
+                    </span>
+                  </div>
+                  <h3 className="font-bold text-xs text-slate-900">{room.building}</h3>
+                  <p className="text-[11px] text-slate-500 mt-0.5">Floor {room.floor || 1} • {room.campus?.name || 'Main Campus'}</p>
+                </div>
+
+                <div className="mt-4 pt-3 border-t border-slate-200 flex items-center justify-between text-xs text-slate-600">
+                  <span className="flex items-center gap-1 font-medium">
+                    Capacity: <strong className="text-slate-800">{room.capacity} seats</strong>
+                  </span>
+                  {room.device_identifier ? (
+                    <span className="text-[10px] font-mono text-purple-600 font-semibold bg-purple-50 px-1.5 py-0.5 rounded border border-purple-200">
+                      Kiosk: {room.device_identifier}
+                    </span>
+                  ) : (
+                    <span className="text-[10px] text-slate-400">No Kiosk Paired</span>
+                  )}
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       )}
@@ -601,7 +913,7 @@ export const AcademicSetup: React.FC = () => {
             <select
               value={progDeptId}
               onChange={(e) => setProgDeptId(e.target.value)}
-              className="w-full text-xs p-2.5 rounded-xl border border-slate-300 mt-1 bg-white"
+              className="w-full text-xs p-2.5 rounded-xl border border-slate-300 mt-1 bg-white font-medium"
             >
               {departments.map((d) => (
                 <option key={d.id} value={d.id}>
@@ -615,23 +927,55 @@ export const AcademicSetup: React.FC = () => {
             <input
               required
               type="text"
-              placeholder="e.g. B.Tech in Mechanical Engineering"
+              placeholder="e.g. Bachelor of Technology in Computer Science"
               value={progName}
               onChange={(e) => setProgName(e.target.value)}
               className="w-full text-xs p-2.5 rounded-xl border border-slate-300 mt-1"
             />
           </div>
-          <div>
-            <label className="text-xs font-bold text-slate-700">Program Code *</label>
-            <input
-              required
-              type="text"
-              placeholder="e.g. BTECH-MECH"
-              value={progCode}
-              onChange={(e) => setProgCode(e.target.value)}
-              className="w-full text-xs p-2.5 rounded-xl border border-slate-300 mt-1 uppercase font-mono"
-            />
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div>
+              <label className="text-xs font-bold text-slate-700">Program Code *</label>
+              <input
+                required
+                type="text"
+                placeholder="e.g. BTECH-CSE"
+                value={progCode}
+                onChange={(e) => setProgCode(e.target.value)}
+                className="w-full text-xs p-2.5 rounded-xl border border-slate-300 mt-1 uppercase font-mono"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-bold text-slate-700">Degree Level</label>
+              <select
+                value={progDegreeLevel}
+                onChange={(e) => setProgDegreeLevel(e.target.value)}
+                className="w-full text-xs p-2.5 rounded-xl border border-slate-300 mt-1 bg-white font-medium"
+              >
+                <option value="undergraduate">Undergraduate (UG)</option>
+                <option value="postgraduate">Postgraduate (PG)</option>
+                <option value="diploma">Diploma</option>
+                <option value="doctorate">Doctorate / PhD</option>
+              </select>
+            </div>
+            <div>
+              <label className="text-xs font-bold text-slate-700">Duration (Semesters)</label>
+              <select
+                value={progDuration}
+                onChange={(e) => setProgDuration(Number(e.target.value))}
+                className="w-full text-xs p-2.5 rounded-xl border border-slate-300 mt-1 bg-white font-medium"
+              >
+                <option value={2}>2 Semesters (1 Year)</option>
+                <option value={4}>4 Semesters (2 Years - M.Tech/MBA)</option>
+                <option value={6}>6 Semesters (3 Years - BCA/BBA)</option>
+                <option value={8}>8 Semesters (4 Years - B.Tech/B.Pharm)</option>
+                <option value={10}>10 Semesters (5 Years - Integrated)</option>
+              </select>
+            </div>
           </div>
+          <p className="text-[11px] text-indigo-600 bg-indigo-50 p-2 rounded-lg font-medium">
+            💡 Semesters 1 through {progDuration} will be automatically created and linked to the active academic session.
+          </p>
           <div className="pt-2 flex justify-end gap-2">
             <button
               type="button"
@@ -650,175 +994,155 @@ export const AcademicSetup: React.FC = () => {
         </form>
       </Modal>
 
-      {/* Subject Modal */}
-      <Modal isOpen={showSubjectModal} onClose={() => setShowSubjectModal(false)} title="Register Academic Subject">
-        <form onSubmit={handleCreateSubject} className="space-y-4">
-          <div>
-            <label className="text-xs font-bold text-slate-700">Department *</label>
-            <select
-              value={subjectDeptId}
-              onChange={(e) => setSubjectDeptId(e.target.value)}
-              className="w-full text-xs p-2.5 rounded-xl border border-slate-300 mt-1 bg-white"
-            >
-              {departments.map((d) => (
-                <option key={d.id} value={d.id}>
-                  {d.name} ({d.code})
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
+      {/* Classroom Modal */}
+      <Modal isOpen={showClassroomModal} onClose={() => setShowClassroomModal(false)} title="Add Classroom / Lecture Hall">
+        <form onSubmit={handleCreateClassroom} className="space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label className="text-xs font-bold text-slate-700">Subject Code *</label>
+              <label className="text-xs font-bold text-slate-700">Room Number / Identifier *</label>
               <input
                 required
                 type="text"
-                placeholder="e.g. CS601"
-                value={subjectCode}
-                onChange={(e) => setSubjectCode(e.target.value.toUpperCase())}
-                className="w-full text-xs p-2.5 rounded-xl border border-slate-300 mt-1 uppercase font-mono"
+                placeholder="e.g. LH-101, Lab-3, CR-204"
+                value={roomNumber}
+                onChange={(e) => setRoomNumber(e.target.value)}
+                className="w-full text-xs p-2.5 rounded-xl border border-slate-300 mt-1 font-mono uppercase"
               />
             </div>
             <div>
-              <label className="text-xs font-bold text-slate-700">Credits *</label>
+              <label className="text-xs font-bold text-slate-700">Building / Academic Block *</label>
               <input
                 required
+                type="text"
+                placeholder="e.g. Turing Academic Block"
+                value={roomBuilding}
+                onChange={(e) => setRoomBuilding(e.target.value)}
+                className="w-full text-xs p-2.5 rounded-xl border border-slate-300 mt-1"
+              />
+            </div>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div>
+              <label className="text-xs font-bold text-slate-700">Floor Number</label>
+              <input
                 type="number"
-                min={1}
-                max={10}
-                value={subjectCredits}
-                onChange={(e) => setSubjectCredits(Number(e.target.value))}
+                min={0}
+                max={20}
+                value={roomFloor}
+                onChange={(e) => setRoomFloor(Number(e.target.value))}
                 className="w-full text-xs p-2.5 rounded-xl border border-slate-300 mt-1"
               />
             </div>
-          </div>
-          <div>
-            <label className="text-xs font-bold text-slate-700">Subject Name *</label>
-            <input
-              required
-              type="text"
-              placeholder="e.g. Distributed Database Systems"
-              value={subjectName}
-              onChange={(e) => setSubjectName(e.target.value)}
-              className="w-full text-xs p-2.5 rounded-xl border border-slate-300 mt-1"
-            />
+            <div>
+              <label className="text-xs font-bold text-slate-700">Seating Capacity</label>
+              <input
+                type="number"
+                min={10}
+                max={500}
+                value={roomCapacity}
+                onChange={(e) => setRoomCapacity(Number(e.target.value))}
+                className="w-full text-xs p-2.5 rounded-xl border border-slate-300 mt-1"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-bold text-slate-700">Campus</label>
+              <select
+                value={roomCampusId}
+                onChange={(e) => setRoomCampusId(e.target.value)}
+                className="w-full text-xs p-2.5 rounded-xl border border-slate-300 mt-1 bg-white font-medium"
+              >
+                {campuses.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name} ({c.code})
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
           <div className="pt-2 flex justify-end gap-2">
             <button
               type="button"
-              onClick={() => setShowSubjectModal(false)}
+              onClick={() => setShowClassroomModal(false)}
               className="px-4 py-2 border border-slate-200 text-slate-600 text-xs font-bold rounded-xl"
             >
               Cancel
             </button>
             <button
               type="submit"
-              className="px-4 py-2 bg-indigo-600 text-white text-xs font-bold rounded-xl hover:bg-indigo-700"
+              className="px-4 py-2 bg-emerald-600 text-white text-xs font-bold rounded-xl hover:bg-emerald-700"
             >
-              Register Subject
-            </button>
-          </div>
-        </form>
-      </Modal>
-
-      {/* Academic Year Modal */}
-      <Modal isOpen={showYearModal} onClose={() => setShowYearModal(false)} title="Create Academic Year">
-        <form onSubmit={handleCreateAcademicYear} className="space-y-4">
-          <div>
-            <label className="text-xs font-bold text-slate-700">Academic Year Title *</label>
-            <input
-              required
-              type="text"
-              placeholder="e.g. 2026-2027 Academic Session"
-              value={yearName}
-              onChange={(e) => setYearName(e.target.value)}
-              className="w-full text-xs p-2.5 rounded-xl border border-slate-300 mt-1"
-            />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="text-xs font-bold text-slate-700">Start Date *</label>
-              <input
-                required
-                type="date"
-                value={yearStartDate}
-                onChange={(e) => setYearStartDate(e.target.value)}
-                className="w-full text-xs p-2.5 rounded-xl border border-slate-300 mt-1"
-              />
-            </div>
-            <div>
-              <label className="text-xs font-bold text-slate-700">End Date *</label>
-              <input
-                required
-                type="date"
-                value={yearEndDate}
-                onChange={(e) => setYearEndDate(e.target.value)}
-                className="w-full text-xs p-2.5 rounded-xl border border-slate-300 mt-1"
-              />
-            </div>
-          </div>
-          <div className="flex items-center gap-2 pt-1">
-            <input
-              type="checkbox"
-              id="yearCurrent"
-              checked={yearIsCurrent}
-              onChange={(e) => setYearIsCurrent(e.target.checked)}
-              className="rounded text-indigo-600"
-            />
-            <label htmlFor="yearCurrent" className="text-xs font-bold text-slate-700">
-              Set as Institution Active Current Year
-            </label>
-          </div>
-          <div className="pt-2 flex justify-end gap-2">
-            <button
-              type="button"
-              onClick={() => setShowYearModal(false)}
-              className="px-4 py-2 border border-slate-200 text-slate-600 text-xs font-bold rounded-xl"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              className="px-4 py-2 bg-indigo-600 text-white text-xs font-bold rounded-xl hover:bg-indigo-700"
-            >
-              Create Academic Year
+              Register Classroom
             </button>
           </div>
         </form>
       </Modal>
 
       {/* Section Modal */}
-      <Modal isOpen={showSectionModal} onClose={() => setShowSectionModal(false)} title="Add Cohort Section">
+      <Modal isOpen={showSectionModal} onClose={() => setShowSectionModal(false)} title="Add Class / Cohort Section">
         <form onSubmit={handleCreateSection} className="space-y-4">
           <div>
-            <label className="text-xs font-bold text-slate-700">Target Semester *</label>
-            <select
-              value={sectionSemesterId}
-              onChange={(e) => setSectionSemesterId(e.target.value)}
-              className="w-full text-xs p-2.5 rounded-xl border border-slate-300 mt-1 bg-white"
-            >
-              {semesters.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.program?.name} (Semester {s.semester_number})
-                </option>
-              ))}
-            </select>
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-bold text-slate-700">Target Semester *</label>
+              {semesters.length === 0 && (
+                <button
+                  type="button"
+                  onClick={handleAutoGenerateSemesters}
+                  className="text-[11px] text-indigo-600 font-bold hover:underline flex items-center gap-1"
+                >
+                  <Sparkles className="h-3 w-3" /> Auto-Generate Semesters
+                </button>
+              )}
+            </div>
+
+            {semesters.length === 0 ? (
+              <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800 space-y-2 mt-1">
+                <p className="font-bold flex items-center gap-1.5">
+                  <Sparkles className="h-4 w-4 text-amber-600" /> No semesters configured yet!
+                </p>
+                <p className="text-[11px] text-amber-700">
+                  Degree programs require semester terms before cohort sections can be created. Click below to automatically provision Semesters 1 to 8.
+                </p>
+                <button
+                  type="button"
+                  onClick={handleAutoGenerateSemesters}
+                  className="w-full py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg font-bold text-xs flex items-center justify-center gap-1.5 shadow-sm"
+                >
+                  <Sparkles className="h-3.5 w-3.5" /> ⚡ Auto-Generate Semesters Now
+                </button>
+              </div>
+            ) : (
+              <select
+                required
+                value={sectionSemesterId}
+                onChange={(e) => setSectionSemesterId(e.target.value)}
+                className="w-full text-xs p-2.5 rounded-xl border border-slate-300 mt-1 bg-white font-medium text-slate-800"
+              >
+                <option value="">-- Select Target Semester --</option>
+                {semesters.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.program?.name || s.program?.code} — Semester {s.semester_number} ({s.academic_year?.name || 'Active Session'})
+                  </option>
+                ))}
+              </select>
+            )}
           </div>
           <div>
-            <label className="text-xs font-bold text-slate-700">Section Name *</label>
+            <label className="text-xs font-bold text-slate-700">Class / Section Name *</label>
             <input
               required
               type="text"
-              placeholder="e.g. Section C"
+              placeholder="e.g. Section A, Section B, CSE-AIML-1"
               value={sectionName}
               onChange={(e) => setSectionName(e.target.value)}
-              className="w-full text-xs p-2.5 rounded-xl border border-slate-300 mt-1"
+              className="w-full text-xs p-2.5 rounded-xl border border-slate-300 mt-1 font-medium"
             />
           </div>
           <div>
-            <label className="text-xs font-bold text-slate-700">Seat Capacity</label>
+            <label className="text-xs font-bold text-slate-700">Student Seat Capacity</label>
             <input
               type="number"
+              min={1}
+              max={300}
               value={sectionCapacity}
               onChange={(e) => setSectionCapacity(Number(e.target.value))}
               className="w-full text-xs p-2.5 rounded-xl border border-slate-300 mt-1"
@@ -834,9 +1158,10 @@ export const AcademicSetup: React.FC = () => {
             </button>
             <button
               type="submit"
-              className="px-4 py-2 bg-indigo-600 text-white text-xs font-bold rounded-xl hover:bg-indigo-700"
+              disabled={semesters.length === 0}
+              className="px-4 py-2 bg-purple-600 disabled:opacity-50 text-white text-xs font-bold rounded-xl hover:bg-purple-700"
             >
-              Create Section
+              Create Class / Section
             </button>
           </div>
         </form>
