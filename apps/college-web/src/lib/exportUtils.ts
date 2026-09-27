@@ -32,7 +32,7 @@ export function exportToPdf(options: {
 }) {
   const doc = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'a4' });
 
-  const instName = options.institutionName || 'Apex Institute of Technology & Science';
+  const instName = options.institutionName || 'SDGI Global University';
 
   // Header banner
   doc.setFontSize(16);

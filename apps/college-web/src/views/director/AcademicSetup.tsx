@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase, DEFAULT_INSTITUTION_ID } from '../../lib/supabase';
+import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
 import { Modal } from '../../components/ui/Modal';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
@@ -22,6 +23,7 @@ import {
 
 export const AcademicSetup: React.FC = () => {
   const toast = useToast();
+  const { profile, institution, currentInstitutionId } = useAuth();
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'hierarchy' | 'subjects' | 'years' | 'offerings'>('hierarchy');
 
@@ -73,6 +75,7 @@ export const AcademicSetup: React.FC = () => {
 
   const fetchData = async () => {
     setLoading(true);
+    const instId = profile?.institution_id || currentInstitutionId || DEFAULT_INSTITUTION_ID;
     try {
       const [
         { data: depts, error: dErr },
@@ -83,12 +86,12 @@ export const AcademicSetup: React.FC = () => {
         { data: years, error: yErr },
         { data: offers }
       ] = await Promise.all([
-        supabase.from('departments').select('*, hod:profiles(*)').order('name'),
+        supabase.from('departments').select('*, hod:profiles(*)').eq('institution_id', instId).order('name'),
         supabase.from('programs').select('*, department:departments(name, code)').order('name'),
         supabase.from('semesters').select('*, program:programs(name, code)').order('semester_number'),
         supabase.from('sections').select('*, semester:semesters(semester_number, program:programs(name, code))').order('name'),
         supabase.from('subjects').select('*, department:departments(name, code)').order('code'),
-        supabase.from('academic_years').select('*').order('start_date', { ascending: false }),
+        supabase.from('academic_years').select('*').eq('institution_id', instId).order('start_date', { ascending: false }),
         supabase.from('subject_offerings').select(`
           id, is_active,
           subject:subjects(id, name, code, credits),
@@ -133,13 +136,14 @@ export const AcademicSetup: React.FC = () => {
 
   useEffect(() => {
     fetchData();
-  }, []);
+  }, [profile?.institution_id, currentInstitutionId]);
 
   const handleCreateDepartment = async (e: React.FormEvent) => {
     e.preventDefault();
+    const instId = profile?.institution_id || currentInstitutionId || DEFAULT_INSTITUTION_ID;
     try {
       const { error } = await supabase.from('departments').insert({
-        institution_id: DEFAULT_INSTITUTION_ID,
+        institution_id: instId,
         name: deptName.trim(),
         code: deptCode.trim().toUpperCase(),
       });
@@ -201,9 +205,10 @@ export const AcademicSetup: React.FC = () => {
 
   const handleCreateAcademicYear = async (e: React.FormEvent) => {
     e.preventDefault();
+    const instId = profile?.institution_id || currentInstitutionId || DEFAULT_INSTITUTION_ID;
     try {
       const { error } = await supabase.from('academic_years').insert({
-        institution_id: DEFAULT_INSTITUTION_ID,
+        institution_id: instId,
         name: yearName.trim(),
         start_date: yearStartDate,
         end_date: yearEndDate,
@@ -267,7 +272,7 @@ export const AcademicSetup: React.FC = () => {
             <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-purple-50 text-purple-700 border border-purple-200">
               Curriculum & Hierarchy
             </span>
-            <span className="text-xs text-slate-400 font-semibold">• Director Control</span>
+            <span className="text-xs text-slate-400 font-semibold">• {institution?.name || 'School of Engineering & Technology'} (SDGI Global University)</span>
           </div>
           <h1 className="text-2xl font-black text-slate-900 tracking-tight mt-1">Academic Structure Setup</h1>
           <p className="text-xs text-slate-500 font-medium mt-0.5">

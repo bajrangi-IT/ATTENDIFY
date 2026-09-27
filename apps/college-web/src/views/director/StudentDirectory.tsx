@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase, DEFAULT_INSTITUTION_ID } from '../../lib/supabase';
+import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
 import { Modal } from '../../components/ui/Modal';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
@@ -61,6 +62,7 @@ interface StudentDirectoryItem {
 
 export const StudentDirectory: React.FC = () => {
   const toast = useToast();
+  const { profile, institution, currentInstitutionId } = useAuth();
   const [loading, setLoading] = useState(true);
   const [students, setStudents] = useState<StudentDirectoryItem[]>([]);
   const [totalCount, setTotalCount] = useState(0);
@@ -139,9 +141,10 @@ export const StudentDirectory: React.FC = () => {
   // Load Metadata
   useEffect(() => {
     async function loadAcademicMetadata() {
+      const instId = profile?.institution_id || currentInstitutionId || DEFAULT_INSTITUTION_ID;
       try {
         const [{ data: depts }, { data: progs }, { data: sems }, { data: secs }] = await Promise.all([
-          supabase.from('departments').select('id, name, code').order('name'),
+          supabase.from('departments').select('id, name, code').eq('institution_id', instId).order('name'),
           supabase.from('programs').select('id, name, code, department_id').order('name'),
           supabase.from('semesters').select('id, semester_number, program_id').order('semester_number'),
           supabase.from('sections').select('id, name, semester_id').order('name'),
@@ -161,11 +164,12 @@ export const StudentDirectory: React.FC = () => {
       }
     }
     loadAcademicMetadata();
-  }, []);
+  }, [profile?.institution_id, currentInstitutionId]);
 
   // Server-Side Search Query to PostgreSQL RPC
   const fetchStudents = async () => {
     setLoading(true);
+    const instId = profile?.institution_id || currentInstitutionId || DEFAULT_INSTITUTION_ID;
     try {
       const offset = (currentPage - 1) * pageSize;
       const { data, error } = await supabase.rpc('rpc_search_students', {
@@ -176,7 +180,8 @@ export const StudentDirectory: React.FC = () => {
         p_section_id: selectedSectionId || null,
         p_threshold_status: selectedThreshold || null,
         p_limit: pageSize,
-        p_offset: offset
+        p_offset: offset,
+        p_institution_id: instId
       });
 
       if (error) throw error;
@@ -253,9 +258,10 @@ export const StudentDirectory: React.FC = () => {
   const handleCreateStudent = async (e: React.FormEvent) => {
     e.preventDefault();
     setCreateSubmitting(true);
+    const instId = profile?.institution_id || currentInstitutionId || DEFAULT_INSTITUTION_ID;
     try {
       const { data, error } = await supabase.rpc('rpc_admin_create_student', {
-        p_institution_id: DEFAULT_INSTITUTION_ID,
+        p_institution_id: instId,
         p_first_name: newFirstName.trim(),
         p_last_name: newLastName.trim(),
         p_email: newEmail.trim().toLowerCase(),

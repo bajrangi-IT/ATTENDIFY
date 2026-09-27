@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { supabase } from '../../lib/supabase';
+import { supabase, DEFAULT_INSTITUTION_ID } from '../../lib/supabase';
+import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
 import { StatusBadge } from '../../components/ui/Badge';
 import { Skeleton } from '../../components/ui/Skeleton';
@@ -25,6 +26,7 @@ export const DirectorDashboard: React.FC<DirectorDashboardProps> = ({
   onNavigateToStudents,
 }) => {
   const toast = useToast();
+  const { profile, institution, currentInstitutionId } = useAuth();
   const [loading, setLoading] = useState(true);
 
   const [counts, setCounts] = useState({
@@ -43,8 +45,9 @@ export const DirectorDashboard: React.FC<DirectorDashboardProps> = ({
   useEffect(() => {
     async function loadDirectorMetrics() {
       setLoading(true);
+      const instId = profile?.institution_id || currentInstitutionId || DEFAULT_INSTITUTION_ID;
       try {
-        // 1. Total counts from real database tables
+        // 1. Total counts from real database tables scoped to this School/Institution
         const [
           { count: studCount },
           { count: facCount },
@@ -53,9 +56,9 @@ export const DirectorDashboard: React.FC<DirectorDashboardProps> = ({
           { data: summaryRows },
           { data: depts },
         ] = await Promise.all([
-          supabase.from('students').select('*', { count: 'exact', head: true }),
-          supabase.from('faculty').select('*', { count: 'exact', head: true }),
-          supabase.from('departments').select('*', { count: 'exact', head: true }),
+          supabase.from('students').select('*', { count: 'exact', head: true }).eq('institution_id', instId),
+          supabase.from('faculty').select('*', { count: 'exact', head: true }).eq('institution_id', instId),
+          supabase.from('departments').select('*', { count: 'exact', head: true }).eq('institution_id', instId),
           supabase.from('attendance_sessions').select(`
             id, status, session_date, start_time, end_time, session_type,
             subject_offering:subject_offerings(subject:subjects(code, name)),
@@ -64,7 +67,7 @@ export const DirectorDashboard: React.FC<DirectorDashboardProps> = ({
             faculty:faculty(profile:profiles(first_name, last_name))
           `),
           supabase.from('v_student_attendance_summary').select('*'),
-          supabase.from('departments').select('id, name, code'),
+          supabase.from('departments').select('id, name, code').eq('institution_id', instId),
         ]);
 
         const held = sessions?.filter((s) => s.status === 'completed' || s.status === 'audit_locked').length || 0;
@@ -135,7 +138,9 @@ export const DirectorDashboard: React.FC<DirectorDashboardProps> = ({
             <span className="px-2.5 py-0.5 text-xs font-bold rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200">
               DIRECTORATE & DEAN OF ACADEMICS
             </span>
-            <span className="text-xs text-slate-500 font-medium">Apex Institute of Technology & Science</span>
+            <span className="text-xs text-slate-500 font-medium">
+              {institution?.name ? `${institution.name} • SDGI Global University` : 'SDGI Global University'}
+            </span>
           </div>
           <h1 className="text-2xl font-black text-slate-900 tracking-tight">
             Institutional Attendance Intelligence & Statutory Governance

@@ -27,7 +27,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
   onNavigateToTimetable,
   onNavigateToReports,
 }) => {
-  const { facultyRecord, profile } = useAuth();
+  const { facultyRecord, profile, institution } = useAuth();
   const toast = useToast();
 
   const [loading, setLoading] = useState(true);
@@ -162,7 +162,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
             Welcome back, {profile?.first_name || 'Prof.'} {profile?.last_name || 'Sharma'}
           </h1>
           <p className="text-xs text-indigo-200 mt-1">
-            Department of Computer Science & Engineering • Academic Semester 2025-26
+            {facultyRecord?.department?.name || institution?.name || 'School of Engineering & Technology'} • SDGI Global University
           </p>
         </div>
 

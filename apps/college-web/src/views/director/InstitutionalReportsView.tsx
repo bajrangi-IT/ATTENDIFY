@@ -86,7 +86,7 @@ const REPORT_CATALOG: ReportOption[] = [
 ];
 
 export const InstitutionalReportsView: React.FC = () => {
-  const { profile, role } = useAuth();
+  const { profile, role, currentInstitutionId } = useAuth();
   const { addToast } = useToast();
 
   const [selectedReportType, setSelectedReportType] = useState('director_institution_report');
@@ -104,12 +104,16 @@ export const InstitutionalReportsView: React.FC = () => {
   // Fetch departments for filter dropdown
   useEffect(() => {
     async function loadMetadata() {
-      const { data } = await supabase.from('departments').select('id, name, code').order('name');
+      const instId = profile?.institution_id || currentInstitutionId;
+      const query = instId
+        ? supabase.from('departments').select('id, name, code').eq('institution_id', instId).order('name')
+        : supabase.from('departments').select('id, name, code').order('name');
+      const { data } = await query;
       if (data) setDepartments(data);
     }
     loadMetadata();
     loadRecentReports();
-  }, []);
+  }, [profile?.institution_id, currentInstitutionId]);
 
   const loadRecentReports = async () => {
     setLoadingReports(true);

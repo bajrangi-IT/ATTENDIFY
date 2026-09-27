@@ -36,7 +36,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   onBackToLogin,
   onToggleMobileMenu
 }) => {
-  const { profile, role, switchRole, resetPassword, updateProfile, signOut } = useAuth();
+  const { profile, role, institution, resetPassword, updateProfile, signOut } = useAuth();
   const { addToast } = useToast();
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -136,15 +136,6 @@ export const Navbar: React.FC<NavbarProps> = ({
     addToast({ title: 'Notifications Cleared', message: 'All alerts marked as read.', type: 'info' });
   };
 
-  const handleRoleSelect = async (newRole: UserRole) => {
-    await switchRole(newRole);
-    onRoleChange(newRole);
-    addToast({
-      title: 'Persona Switched',
-      message: `Operating as ${newRole.replace('_', ' ').toUpperCase()}`,
-      type: 'info'
-    });
-  };
 
   const handleResetPassword = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -217,14 +208,14 @@ export const Navbar: React.FC<NavbarProps> = ({
         </div>
         <div>
           <div className="flex items-center gap-1.5 sm:gap-2">
-            <span className="font-black text-slate-900 tracking-tight text-sm sm:text-lg">CampusAttend</span>
+            <span className="font-black text-slate-900 tracking-tight text-sm sm:text-lg">SDGI Global University</span>
             <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
               ERP
             </span>
           </div>
           <p className="text-[11px] text-slate-500 font-medium hidden sm:flex items-center gap-1">
-            <Building2 className="h-3 w-3 text-slate-400" />
-            Apex Institute of Technology
+            <Building2 className="h-3 w-3 text-slate-400 shrink-0" />
+            <span className="truncate max-w-[260px]">{institution?.name || 'School of Engineering & Technology'}</span>
           </p>
         </div>
       </div>
@@ -246,9 +237,9 @@ export const Navbar: React.FC<NavbarProps> = ({
         </div>
       </div>
 
-      {/* Role Switcher, Notifications & Profile */}
+      {/* Role Display, Notifications & Profile */}
       <div className="flex items-center space-x-1.5 sm:space-x-3">
-        {/* Prominent Back to Login / Switch Role Button */}
+        {/* Logout Button */}
         <button
           onClick={() => {
             if (onBackToLogin) {
@@ -257,31 +248,38 @@ export const Navbar: React.FC<NavbarProps> = ({
               signOut();
             }
             addToast({
-              title: 'Returned to Login',
-              message: 'Select another role or account.',
+              title: 'Logged Out',
+              message: 'Session closed successfully.',
               type: 'info'
             });
           }}
           className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-rose-50 text-slate-700 hover:text-rose-600 border border-slate-200 hover:border-rose-200 text-xs font-bold transition shadow-xs cursor-pointer shrink-0"
-          title="Sign out and return to Role Selection / Login Screen"
+          title="Sign out"
         >
-          <ArrowLeft className="w-3.5 h-3.5 text-slate-500 hover:text-rose-600" />
-          <span className="hidden sm:inline">Logout / Switch Role</span>
+          <LogOut className="w-3.5 h-3.5 text-slate-500 hover:text-rose-600" />
+          <span className="hidden sm:inline">Logout</span>
           <span className="sm:hidden text-[11px]">Logout</span>
         </button>
 
-        {/* Role Switcher Pill */}
-        <div className="flex items-center bg-slate-100 rounded-xl p-0.5 sm:p-1 border border-slate-200">
-          <span className="text-[11px] font-semibold text-slate-500 px-2 hidden lg:inline">Role:</span>
-          <select
-            value={currentRole}
-            onChange={(e) => handleRoleSelect(e.target.value as UserRole)}
-            className="bg-white text-slate-800 text-[11px] sm:text-xs font-semibold py-1 sm:py-1.5 px-2 sm:px-3 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 shadow-xs cursor-pointer capitalize max-w-[100px] sm:max-w-none truncate"
-          >
-            <option value="faculty">Faculty</option>
-            <option value="student">Student Portal</option>
-            <option value="director">Director</option>
-          </select>
+        {/* Read-Only Role Display (NO Dropdown, No Role Switch) */}
+        <div className="flex items-center gap-1.5 bg-slate-100 rounded-xl py-1 px-2.5 sm:px-3 border border-slate-200 shadow-2xs">
+          <Shield className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+          <span className="text-[11px] font-semibold text-slate-500 hidden sm:inline">Role:</span>
+          <span className="text-xs font-bold text-slate-800 capitalize tracking-tight">
+            {role === 'director'
+              ? 'Director'
+              : role === 'faculty'
+              ? 'Faculty'
+              : role === 'student'
+              ? 'Student'
+              : role === 'hod'
+              ? 'HOD'
+              : role === 'it_admin'
+              ? 'IT Admin'
+              : role === 'super_admin'
+              ? 'Super Admin'
+              : (role || currentRole)}
+          </span>
         </div>
 
         {/* Notifications Bell */}

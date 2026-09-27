@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useAuth } from '../context/AuthContext';
 import { mockDepartmentSummaries } from '../data/mockData';
 import {
   BarChart3,
@@ -12,6 +13,7 @@ import {
 } from 'lucide-react';
 
 export const DepartmentAnalyticsView: React.FC = () => {
+  const { institution, facultyRecord } = useAuth();
   const [filter, setFilter] = useState<'all' | 'critical' | 'warning' | 'good'>('all');
   const [alertSent, setAlertSent] = useState(false);
 
@@ -37,9 +39,9 @@ export const DepartmentAnalyticsView: React.FC = () => {
         <div>
           <div className="flex items-center gap-2 mb-1">
             <span className="px-2.5 py-0.5 text-xs font-bold rounded-md bg-purple-50 text-purple-700 border border-purple-200">
-              DEPARTMENT OF COMPUTER SCIENCE & ENG.
+              {facultyRecord?.department?.name?.toUpperCase() || institution?.name?.toUpperCase() || 'ACADEMIC DEPARTMENT OVERVIEW'}
             </span>
-            <span className="text-xs text-slate-500 font-medium">Head of Department: Dr. Aris Thorne</span>
+            <span className="text-xs text-slate-500 font-medium">{institution?.name ? `${institution.name} • SDGI Global University` : 'SDGI Global University'}</span>
           </div>
           <h1 className="text-2xl font-black text-slate-900 tracking-tight">Academic Department Attendance Analytics</h1>
           <p className="text-xs text-slate-500 font-medium mt-1">

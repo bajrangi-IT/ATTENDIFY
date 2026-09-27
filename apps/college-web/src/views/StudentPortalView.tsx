@@ -175,7 +175,7 @@ export const StudentPortalView: React.FC = () => {
               Automated Statutory Threshold Analysis (75% Rule)
             </h2>
             <p className="text-xs text-slate-500 leading-relaxed">
-              Based on the Apex Institute Academic Regulation, students must maintain minimum 75.0% canonical attendance across all finalized lecture sessions to qualify for end-semester exams.
+              Based on the SDGI Global University Academic Regulation, students must maintain minimum 75.0% canonical attendance across all finalized lecture sessions to qualify for end-semester exams.
             </p>
 
             <div className="grid grid-cols-2 gap-4 mt-4">

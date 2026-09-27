@@ -80,7 +80,7 @@ interface TimetableEntryItem {
 }
 
 export const TimetableManager: React.FC = () => {
-  const { profile, role } = useAuth();
+  const { profile, role, currentInstitutionId } = useAuth();
   const { addToast } = useToast();
 
   const [entries, setEntries] = useState<TimetableEntryItem[]>([]);
@@ -136,16 +136,25 @@ export const TimetableManager: React.FC = () => {
 
   // Fetch Metadata & Entries
   const loadTimetableData = async () => {
+    const instId = profile?.institution_id || currentInstitutionId;
     try {
       setLoading(true);
 
+      const deptQuery = instId 
+        ? supabase.from('departments').select('id, name, code').eq('institution_id', instId).order('name')
+        : supabase.from('departments').select('id, name, code').order('name');
+
+      const facQuery = instId
+        ? supabase.from('faculty').select('id, employee_code, profile:profiles(first_name, last_name)').eq('institution_id', instId).order('employee_code')
+        : supabase.from('faculty').select('id, employee_code, profile:profiles(first_name, last_name)').order('employee_code');
+
       const [deptRes, progRes, semRes, secRes, roomRes, facRes, offerRes] = await Promise.all([
-        supabase.from('departments').select('id, name, code').order('name'),
+        deptQuery,
         supabase.from('programs').select('id, name, code, department_id').order('name'),
         supabase.from('semesters').select('id, semester_number, program_id').order('semester_number'),
         supabase.from('sections').select('id, name, semester_id').order('name'),
         supabase.from('classrooms').select('id, room_number, building').order('room_number'),
-        supabase.from('faculty').select('id, employee_code, profile:profiles(first_name, last_name)').order('employee_code'),
+        facQuery,
         supabase.from('subject_offerings').select('id, subject:subjects(name, code)')
       ]);
 

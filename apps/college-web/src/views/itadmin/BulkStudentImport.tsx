@@ -24,7 +24,7 @@ import {
 } from 'lucide-react';
 
 export const BulkStudentImport: React.FC = () => {
-  const { profile } = useAuth();
+  const { profile, currentInstitutionId } = useAuth();
   const { addToast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -54,11 +54,12 @@ export const BulkStudentImport: React.FC = () => {
   // Load Metadata
   useEffect(() => {
     async function loadMetadata() {
+      const instId = profile?.institution_id || currentInstitutionId || DEFAULT_INSTITUTION_ID;
       try {
         const [secRes, deptRes, facRes, roomRes, subRes, offRes] = await Promise.all([
           supabase.from('sections').select('id, name, semester_id').order('name'),
-          supabase.from('departments').select('id, name, code').order('code'),
-          supabase.from('faculty').select('id, employee_code, profile:profiles(first_name, last_name)'),
+          supabase.from('departments').select('id, name, code').eq('institution_id', instId).order('code'),
+          supabase.from('faculty').select('id, employee_code, profile:profiles(first_name, last_name)').eq('institution_id', instId),
           supabase.from('classrooms').select('id, room_number, building'),
           supabase.from('subjects').select('id, code, name'),
           supabase.from('subject_offerings').select('id, subject:subjects(id, code, name)')
@@ -336,8 +337,9 @@ export const BulkStudentImport: React.FC = () => {
         }));
       }
 
+      const instId = profile?.institution_id || currentInstitutionId || DEFAULT_INSTITUTION_ID;
       const { data, error } = await supabase.rpc(rpcName, {
-        p_institution_id: DEFAULT_INSTITUTION_ID,
+        p_institution_id: instId,
         p_records: payloadRecords,
         p_created_by: profile?.id || null
       });

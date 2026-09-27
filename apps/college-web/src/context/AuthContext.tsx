@@ -8,6 +8,10 @@ interface AuthContextType {
   role: UserRole;
   facultyRecord: Faculty | null;
   studentRecord: Student | null;
+  institution: any | null;
+  currentInstitutionId: string;
+  institutionsList: any[];
+  switchInstitution: (instId: string) => Promise<void>;
   isAuthenticated: boolean;
   loading: boolean;
   loginAsRole: (role: UserRole) => Promise<void>;
@@ -36,6 +40,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [role, setRole] = useState<UserRole>('faculty');
   const [facultyRecord, setFacultyRecord] = useState<Faculty | null>(null);
   const [studentRecord, setStudentRecord] = useState<Student | null>(null);
+  const [institution, setInstitution] = useState<any | null>(null);
+  const [currentInstitutionId, setCurrentInstitutionId] = useState<string>(DEFAULT_INSTITUTION_ID);
+  const [institutionsList, setInstitutionsList] = useState<any[]>([]);
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
     return !!localStorage.getItem('campusattend_auth_user');
   });
@@ -45,6 +52,17 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const loadProfileDetails = async (prof: Profile) => {
     setProfile(prof);
     setRole(prof.role);
+
+    const instId = prof.institution_id || DEFAULT_INSTITUTION_ID;
+    setCurrentInstitutionId(instId);
+
+    const [{ data: inst }, { data: allInsts }] = await Promise.all([
+      supabase.from('institutions').select('*').eq('id', instId).maybeSingle(),
+      supabase.from('institutions').select('*').order('name'),
+    ]);
+
+    setInstitution(inst || null);
+    if (allInsts) setInstitutionsList(allInsts);
 
     if (prof.role === 'faculty' || prof.role === 'hod') {
       const { data: fac } = await supabase
@@ -292,6 +310,16 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   };
 
+  const switchInstitution = async (newInstId: string) => {
+    setCurrentInstitutionId(newInstId);
+    const { data: inst } = await supabase
+      .from('institutions')
+      .select('*')
+      .eq('id', newInstId)
+      .maybeSingle();
+    if (inst) setInstitution(inst);
+  };
+
   return (
     <AuthContext.Provider
       value={{
@@ -300,6 +328,10 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         role,
         facultyRecord,
         studentRecord,
+        institution,
+        currentInstitutionId,
+        institutionsList,
+        switchInstitution,
         isAuthenticated,
         loading,
         loginAsRole,

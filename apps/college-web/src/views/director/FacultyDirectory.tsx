@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase, DEFAULT_INSTITUTION_ID } from '../../lib/supabase';
+import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
 import { Modal } from '../../components/ui/Modal';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
@@ -57,6 +58,7 @@ interface FacultyItem {
 
 export const FacultyDirectory: React.FC = () => {
   const toast = useToast();
+  const { profile, institution, currentInstitutionId } = useAuth();
   const [loading, setLoading] = useState(true);
   const [faculty, setFaculty] = useState<FacultyItem[]>([]);
   const [departments, setDepartments] = useState<any[]>([]);
@@ -117,6 +119,7 @@ export const FacultyDirectory: React.FC = () => {
   const [statusConfirmFaculty, setStatusConfirmFaculty] = useState<FacultyItem | null>(null);
 
   const fetchFaculty = async () => {
+    const instId = profile?.institution_id || currentInstitutionId || DEFAULT_INSTITUTION_ID;
     try {
       setLoading(true);
       const [
@@ -139,8 +142,9 @@ export const FacultyDirectory: React.FC = () => {
               )
             )
           `)
+          .eq('institution_id', instId)
           .order('employee_code'),
-        supabase.from('departments').select('id, name, code').order('name'),
+        supabase.from('departments').select('id, name, code').eq('institution_id', instId).order('name'),
         supabase.from('sections').select('id, name').order('name'),
         supabase.from('subject_offerings').select('id, subject:subjects(name, code)')
       ]);
@@ -172,7 +176,7 @@ export const FacultyDirectory: React.FC = () => {
 
   useEffect(() => {
     fetchFaculty();
-  }, []);
+  }, [profile?.institution_id, currentInstitutionId]);
 
   // Filtered & Paginated Faculty
   const filteredFaculty = faculty.filter((f) => {
@@ -193,9 +197,10 @@ export const FacultyDirectory: React.FC = () => {
   const handleAddFaculty = async (e: React.FormEvent) => {
     e.preventDefault();
     setSubmittingAdd(true);
+    const instId = profile?.institution_id || currentInstitutionId || DEFAULT_INSTITUTION_ID;
     try {
       const { data, error } = await supabase.rpc('rpc_admin_create_faculty', {
-        p_institution_id: DEFAULT_INSTITUTION_ID,
+        p_institution_id: instId,
         p_department_id: deptId,
         p_first_name: firstName.trim(),
         p_last_name: lastName.trim(),

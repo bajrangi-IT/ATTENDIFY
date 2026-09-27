@@ -105,13 +105,13 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onOpenDisp
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h1 className="text-xl sm:text-2xl font-black text-white tracking-tight">CampusAttend OS</h1>
+              <h1 className="text-xl sm:text-2xl font-black text-white tracking-tight">SDGI Global University</h1>
               <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-500/20 text-indigo-400 border border-indigo-500/30 font-mono">
                 ERP v1.0
               </span>
             </div>
             <p className="text-xs text-slate-400 hidden sm:block">
-              Apex Institute of Technology &bull; Unified College Attendance & Institutional Portal
+              SDGI Global University &bull; Multi-School Unified Attendance & Institutional Portal
             </p>
           </div>
         </div>
@@ -304,7 +304,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onOpenDisp
       {/* Footer */}
       <footer className="max-w-6xl mx-auto w-full pt-6 border-t border-slate-800/80 flex flex-col sm:flex-row justify-between items-center gap-4 text-xs text-slate-500">
         <div>
-          <span>CampusAttend OS &bull; Apex Institute of Technology & Science</span>
+          <span>SDGI Global University &bull; Multi-School Attendance OS</span>
         </div>
         <div className="flex items-center gap-4">
           <button
