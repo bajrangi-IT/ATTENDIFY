@@ -482,9 +482,9 @@ export const StudentDirectory: React.FC = () => {
         <div>
           <div className="flex items-center gap-2">
             <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-indigo-50 text-indigo-700 border border-indigo-200">
-              PostgreSQL Scaled Registry
+              Student Directory
             </span>
-            <span className="text-xs text-slate-400 font-semibold">• Director Control</span>
+            <span className="text-xs text-slate-400 font-semibold">• Official Records</span>
           </div>
           <h1 className="text-2xl font-black text-slate-900 tracking-tight mt-1">Student Academic Registry</h1>
           <p className="text-xs text-slate-500 font-medium mt-0.5">

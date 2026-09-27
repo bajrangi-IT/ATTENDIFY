@@ -994,6 +994,90 @@ export const AcademicSetup: React.FC = () => {
         </form>
       </Modal>
 
+      {/* Subject Modal */}
+      <Modal isOpen={showSubjectModal} onClose={() => setShowSubjectModal(false)} title="Register Academic Subject">
+        <form onSubmit={handleCreateSubject} className="space-y-4">
+          <div>
+            <label className="text-xs font-bold text-slate-700">Department *</label>
+            <select
+              value={subjectDeptId}
+              onChange={(e) => setSubjectDeptId(e.target.value)}
+              className="w-full text-xs p-2.5 rounded-xl border border-slate-300 mt-1 bg-white font-medium"
+            >
+              {departments.map((d) => (
+                <option key={d.id} value={d.id}>
+                  {d.name} ({d.code})
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs font-bold text-slate-700">Subject Code *</label>
+              <input
+                required
+                type="text"
+                placeholder="e.g. CS601"
+                value={subjectCode}
+                onChange={(e) => setSubjectCode(e.target.value.toUpperCase())}
+                className="w-full text-xs p-2.5 rounded-xl border border-slate-300 mt-1 uppercase font-mono"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-bold text-slate-700">Credits *</label>
+              <input
+                required
+                type="number"
+                min={1}
+                max={10}
+                value={subjectCredits}
+                onChange={(e) => setSubjectCredits(Number(e.target.value))}
+                className="w-full text-xs p-2.5 rounded-xl border border-slate-300 mt-1"
+              />
+            </div>
+          </div>
+          <div>
+            <label className="text-xs font-bold text-slate-700">Subject Name *</label>
+            <input
+              required
+              type="text"
+              placeholder="e.g. Distributed Database Systems"
+              value={subjectName}
+              onChange={(e) => setSubjectName(e.target.value)}
+              className="w-full text-xs p-2.5 rounded-xl border border-slate-300 mt-1"
+            />
+          </div>
+          <div>
+            <label className="text-xs font-bold text-slate-700">Subject Type</label>
+            <select
+              value={subjectType}
+              onChange={(e) => setSubjectType(e.target.value)}
+              className="w-full text-xs p-2.5 rounded-xl border border-slate-300 mt-1 bg-white font-medium"
+            >
+              <option value="core">Core Theory</option>
+              <option value="lab">Practical / Laboratory</option>
+              <option value="elective">Departmental Elective</option>
+              <option value="open_elective">Open / University Elective</option>
+            </select>
+          </div>
+          <div className="pt-2 flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => setShowSubjectModal(false)}
+              className="px-4 py-2 border border-slate-200 text-slate-600 text-xs font-bold rounded-xl"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="px-4 py-2 bg-indigo-600 text-white text-xs font-bold rounded-xl hover:bg-indigo-700"
+            >
+              Register Subject
+            </button>
+          </div>
+        </form>
+      </Modal>
+
       {/* Classroom Modal */}
       <Modal isOpen={showClassroomModal} onClose={() => setShowClassroomModal(false)} title="Add Classroom / Lecture Hall">
         <form onSubmit={handleCreateClassroom} className="space-y-4">

@@ -634,7 +634,7 @@ export const BulkStudentImport: React.FC = () => {
           <div className="flex items-center justify-between">
             <div>
               <h3 className="font-bold text-sm text-slate-900">Historical Batch Ingestions</h3>
-              <p className="text-xs text-slate-500">Audited batch jobs and error reports stored in PostgreSQL.</p>
+              <p className="text-xs text-slate-500">Audited batch jobs and historical logs stored in system database.</p>
             </div>
             <button
               onClick={fetchImportHistory}

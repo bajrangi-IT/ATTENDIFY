@@ -68,19 +68,19 @@ export const Sidebar: React.FC<SidebarProps> = ({
           { id: 'faculty-directory' as NavTab, label: 'Department Faculty', icon: Users },
           { id: 'live-session' as NavTab, label: 'Active Class Sessions', icon: Radio },
           { id: 'timetable' as NavTab, label: 'Department Timetable', icon: Calendar },
-          { id: 'institutional-reports' as NavTab, label: 'Department Reports (Async)', icon: BarChart3, badge: 'REPORTS' },
+          { id: 'institutional-reports' as NavTab, label: 'Department Reports', icon: BarChart3 },
         ];
       case 'director':
         return [
-          { id: 'director-dashboard' as NavTab, label: 'Executive College Overview', icon: BarChart3, badge: 'MAC' },
-          { id: 'institutional-reports' as NavTab, label: 'Institutional Reports (Async)', icon: BarChart3, badge: 'BULLMQ' },
+          { id: 'director-dashboard' as NavTab, label: 'Executive College Overview', icon: BarChart3 },
+          { id: 'institutional-reports' as NavTab, label: 'Institutional Reports', icon: BarChart3 },
           { id: 'director-approvals' as NavTab, label: 'Session Report Approvals', icon: FileCheck },
           { id: 'student-directory' as NavTab, label: 'Student Directory & Profiles', icon: Users },
-          { id: 'faculty-directory' as NavTab, label: 'Faculty & Academic Staff', icon: Users, badge: 'STAFF' },
+          { id: 'faculty-directory' as NavTab, label: 'Faculty & Academic Staff', icon: Users },
           { id: 'academic-setup' as NavTab, label: 'Academic Setup & Structure', icon: Building2 },
           { id: 'timetable' as NavTab, label: 'Master Campus Timetable', icon: Calendar },
           { id: 'bulk-import' as NavTab, label: 'Bulk Data Imports', icon: FileSpreadsheet },
-          { id: 'audit-logs' as NavTab, label: 'Institutional Audit Trail', icon: ShieldAlert },
+          { id: 'audit-logs' as NavTab, label: 'Activity & Audit Logs', icon: ShieldAlert },
         ];
       case 'it_admin':
         return [

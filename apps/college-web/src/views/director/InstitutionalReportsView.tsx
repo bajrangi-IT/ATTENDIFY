@@ -165,8 +165,8 @@ export const InstitutionalReportsView: React.FC = () => {
       if (response.status === 202) {
         const resData = await response.json();
         addToast({
-          title: 'Report Job Enqueued',
-          message: `Your report generation job (${selectedFormat.toUpperCase()}) was queued asynchronously with BullMQ worker.`,
+          title: 'Report Generation Started',
+          message: `Your report (${selectedFormat.toUpperCase()}) is being generated. You will be notified once ready.`,
           type: 'success'
         });
 
@@ -180,7 +180,7 @@ export const InstitutionalReportsView: React.FC = () => {
       }
     } catch (err: any) {
       addToast({
-        title: 'Compilation Dispatched',
+        title: 'Report Queued',
         message: 'Report request registered into system queue.',
         type: 'info'
       });
@@ -204,7 +204,7 @@ export const InstitutionalReportsView: React.FC = () => {
                 Institutional Reports Hub
               </h1>
               <p className="text-xs text-slate-500 font-medium">
-                Asynchronous BullMQ multi-format reporting engine (PDF, Excel, CSV)
+                Generate, preview, and export official attendance reports (PDF, Excel, CSV)
               </p>
             </div>
           </div>
@@ -338,17 +338,17 @@ export const InstitutionalReportsView: React.FC = () => {
               {isGenerating ? (
                 <>
                   <RefreshCw className="h-4 w-4 animate-spin" />
-                  <span>Enqueuing Asynchronous Job...</span>
+                  <span>Generating Report...</span>
                 </>
               ) : (
                 <>
                   <Sparkles className="h-4 w-4" />
-                  <span>Generate Report Asynchronously (BullMQ)</span>
+                  <span>Generate & Export Report</span>
                 </>
               )}
             </button>
             <p className="text-[11px] text-slate-400 text-center mt-2">
-              Large reports run non-blocking in background queues. You will be notified when ready.
+              Automated reporting will format and compile all academic records.
             </p>
           </div>
         </div>

@@ -153,10 +153,10 @@ export const AuditLogView: React.FC = () => {
         <div>
           <div className="flex items-center space-x-2 text-indigo-900 font-bold text-xl">
             <ShieldAlert className="h-6 w-6 text-indigo-600" />
-            <span>Immutable Institutional Audit Trail</span>
+            <span>Activity & Compliance Audit Logs</span>
           </div>
           <p className="text-sm text-slate-500 mt-1">
-            Real-time forensic record of attendance overrides, session approvals, grade locks, and administrative policy changes.
+            System record of attendance overrides, session approvals, timetable edits, and administrative policy changes.
           </p>
         </div>
 

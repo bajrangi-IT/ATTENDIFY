@@ -76,21 +76,21 @@ export const Navbar: React.FC<NavbarProps> = ({
         // Fallback to institutional announcements
         setLiveNotifications([
           {
-            id: 'demo-1',
-            title: 'Attendance Engine Operational',
-            message: 'High-throughput dynamic QR check-in & BullMQ workers active.',
+            id: 'announcement-1',
+            title: 'Attendance System Online',
+            message: 'Campus attendance tracking and verification system is active.',
             created_at: new Date().toISOString(),
             is_read: false
           },
           {
-            id: 'demo-2',
-            title: 'Audit Logging Enforced',
-            message: 'Immutable audit triggers active on institutional logs.',
+            id: 'announcement-2',
+            title: 'Academic Term Active',
+            message: 'Current semester schedule and student enrollment are in sync.',
             created_at: new Date(Date.now() - 3600000).toISOString(),
             is_read: false
           }
         ]);
-        setUnreadCount(2);
+        setUnreadCount(0);
       }
     } catch (err) {
       console.error('Error loading live notifications', err);

@@ -47,60 +47,74 @@ export const DirectorDashboard: React.FC<DirectorDashboardProps> = ({
       setLoading(true);
       const instId = profile?.institution_id || currentInstitutionId || DEFAULT_INSTITUTION_ID;
       try {
-        // 1. Total counts from real database tables scoped to this School/Institution
+        // High-performance parallel queries scoped to institution
         const [
           { count: studCount },
           { count: facCount },
           { count: deptCount },
-          { data: sessions },
+          { count: heldCount },
+          { count: cancelledCount },
+          { data: inProgressSessions },
           { data: summaryRows },
           { data: depts },
         ] = await Promise.all([
           supabase.from('students').select('*', { count: 'exact', head: true }).eq('institution_id', instId),
           supabase.from('faculty').select('*', { count: 'exact', head: true }).eq('institution_id', instId),
           supabase.from('departments').select('*', { count: 'exact', head: true }).eq('institution_id', instId),
-          supabase.from('attendance_sessions').select(`
-            id, status, session_date, start_time, end_time, session_type,
-            subject_offering:subject_offerings(subject:subjects(code, name)),
-            classroom:classrooms(room_number, building),
-            section:sections(name),
-            faculty:faculty(profile:profiles(first_name, last_name))
-          `),
-          supabase.from('v_student_attendance_summary').select('*'),
-          supabase.from('departments').select('id, name, code').eq('institution_id', instId),
+          supabase.from('attendance_sessions').select('*', { count: 'exact', head: true }).in('status', ['completed', 'audit_locked']),
+          supabase.from('attendance_sessions').select('*', { count: 'exact', head: true }).eq('status', 'cancelled'),
+          supabase.from('attendance_sessions')
+            .select(`
+              id, status, session_date, start_time, end_time, session_type,
+              subject_offering:subject_offerings(subject:subjects(code, name)),
+              classroom:classrooms(room_number, building),
+              section:sections(name),
+              faculty:faculty(profile:profiles(first_name, last_name))
+            `)
+            .eq('status', 'in_progress')
+            .limit(10),
+          supabase.from('v_student_attendance_summary').select('attendance_percentage, threshold_status, department_id'),
+          supabase.from('departments').select('id, name, code').eq('institution_id', instId).order('name'),
         ]);
-
-        const held = sessions?.filter((s) => s.status === 'completed' || s.status === 'audit_locked').length || 0;
-        const cancelled = sessions?.filter((s) => s.status === 'cancelled').length || 0;
-        const inProgress = sessions?.filter((s) => s.status === 'in_progress') || [];
 
         let avg = 0;
         let detained = 0;
         if (summaryRows && summaryRows.length > 0) {
-          const totalPct = summaryRows.reduce((acc, row) => acc + parseFloat(row.attendance_percentage), 0);
+          const totalPct = summaryRows.reduce((acc: number, row: any) => acc + (parseFloat(row.attendance_percentage) || 0), 0);
           avg = Math.round((totalPct / summaryRows.length) * 10) / 10;
-          detained = summaryRows.filter((row) => row.threshold_status === 'critical').length;
+          detained = summaryRows.filter((row: any) => row.threshold_status === 'critical').length;
         }
 
         setCounts({
           totalStudents: studCount || 0,
           totalFaculty: facCount || 0,
           totalDepartments: deptCount || 0,
-          heldSessions: held,
-          cancelledSessions: cancelled,
+          heldSessions: heldCount || 0,
+          cancelledSessions: cancelledCount || 0,
           averageAttendance: avg,
           detainedCount: detained,
         });
 
-        setLiveSessions(inProgress);
+        setLiveSessions(inProgressSessions || []);
 
-        // Map department statistics
-        const deptList = (depts || []).map((d) => ({
-          name: d.name,
-          code: d.code,
-          attendance: d.code === 'CSE' ? avg || 83.4 : 80.0,
-          detained: d.code === 'CSE' ? detained : 0,
-        }));
+        // Calculate REAL department statistics - no hardcoded demo calculations
+        const deptList = (depts || []).map((d: any) => {
+          const deptRows = summaryRows?.filter((row: any) => row.department_id === d.id) || [];
+          let deptAvg = 0;
+          let deptDetained = 0;
+          if (deptRows.length > 0) {
+            const sum = deptRows.reduce((acc: number, r: any) => acc + (parseFloat(r.attendance_percentage) || 0), 0);
+            deptAvg = Math.round((sum / deptRows.length) * 10) / 10;
+            deptDetained = deptRows.filter((r: any) => r.threshold_status === 'critical').length;
+          }
+          return {
+            name: d.name,
+            code: d.code,
+            attendance: deptAvg,
+            detained: deptDetained,
+            hasData: deptRows.length > 0,
+          };
+        });
         setDepartmentStats(deptList);
       } catch (err: any) {
         console.error('Error loading director metrics:', err);
@@ -143,10 +157,10 @@ export const DirectorDashboard: React.FC<DirectorDashboardProps> = ({
             </span>
           </div>
           <h1 className="text-2xl font-black text-slate-900 tracking-tight">
-            Institutional Attendance Intelligence & Statutory Governance
+            Institutional Attendance Overview
           </h1>
           <p className="text-xs text-slate-500 font-medium mt-1">
-            Real-time cross-departmental analytics and live lecture compliance monitor.
+            Real-time cross-departmental analytics and live lecture attendance monitor.
           </p>
         </div>
       </div>
@@ -161,7 +175,9 @@ export const DirectorDashboard: React.FC<DirectorDashboardProps> = ({
           <div className="text-3xl font-black text-slate-900 mt-2 font-mono">
             {loading ? <Skeleton className="h-8 w-20" /> : `${counts.averageAttendance}%`}
           </div>
-          <p className="text-[11px] text-emerald-600 font-semibold mt-1">▲ Compliant with 75% rule</p>
+          <p className="text-[11px] text-slate-500 font-semibold mt-1">
+            {counts.heldSessions === 0 ? 'No attendance records yet' : counts.averageAttendance >= 75 ? '▲ Compliant with 75% rule' : '▼ Below 75% requirement'}
+          </p>
         </div>
 
         <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
@@ -302,15 +318,17 @@ export const DirectorDashboard: React.FC<DirectorDashboardProps> = ({
                   </div>
                   <div className="text-right">
                     <span className="text-xs text-slate-400 font-medium">Average Attendance</span>
-                    <div className="text-base font-black text-slate-900 font-mono">{dept.attendance}%</div>
+                    <div className="text-base font-black text-slate-900 font-mono">
+                      {dept.hasData ? `${dept.attendance}%` : 'No Records Yet'}
+                    </div>
                   </div>
                 </div>
               </div>
 
               <div className="w-full h-2.5 bg-slate-200 rounded-full overflow-hidden">
                 <div
-                  className={`h-full rounded-full ${
-                    dept.attendance >= 80 ? 'bg-indigo-600' : 'bg-amber-500'
+                  className={`h-full rounded-full transition-all duration-500 ${
+                    dept.attendance >= 75 ? 'bg-indigo-600' : 'bg-amber-500'
                   }`}
                   style={{ width: `${dept.attendance}%` }}
                 />
