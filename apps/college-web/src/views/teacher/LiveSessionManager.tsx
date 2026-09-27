@@ -27,7 +27,9 @@ import {
   Clock,
   Sparkles,
   Info,
-  Tv
+  Tv,
+  Plus,
+  Radio
 } from 'lucide-react';
 
 interface RosterItem {
@@ -77,10 +79,72 @@ export const LiveSessionManager: React.FC<LiveSessionManagerProps> = ({ initialS
   // End session dialog
   const [showEndSessionDialog, setShowEndSessionDialog] = useState(false);
 
+  // Start new session modal
+  const [showNewSessionModal, setShowNewSessionModal] = useState(false);
+  const [assignedCourses, setAssignedCourses] = useState<any[]>([]);
+  const [classroomsList, setClassroomsList] = useState<any[]>([]);
+  const [newSessionForm, setNewSessionForm] = useState({
+    subjectOfferingId: '',
+    sectionId: '',
+    classroomId: '',
+    sessionType: 'lecture' as 'lecture' | 'lab' | 'tutorial',
+  });
+  const [creatingSession, setCreatingSession] = useState(false);
+
+  // Load available courses and classrooms for starting sessions
+  useEffect(() => {
+    async function loadCreationData() {
+      try {
+        let aQuery = supabase
+          .from('faculty_assignments')
+          .select(`
+            id, is_primary,
+            section:sections(id, name, semester:semesters(semester_number, program:programs(name, code))),
+            subject_offering:subject_offerings(id, subject:subjects(id, name, code))
+          `);
+
+        if (facultyRecord?.id) {
+          aQuery = aQuery.eq('faculty_id', facultyRecord.id);
+        }
+
+        const { data: assignments } = await aQuery;
+
+        if (assignments && assignments.length > 0) {
+          setAssignedCourses(assignments);
+          const firstOffering = (assignments[0] as any).subject_offering;
+          const firstSection = (assignments[0] as any).section;
+
+          setNewSessionForm((prev) => ({
+            ...prev,
+            subjectOfferingId: prev.subjectOfferingId || (Array.isArray(firstOffering) ? firstOffering[0]?.id : firstOffering?.id) || '',
+            sectionId: prev.sectionId || (Array.isArray(firstSection) ? firstSection[0]?.id : firstSection?.id) || '',
+          }));
+        }
+
+        const { data: rooms } = await supabase
+          .from('classrooms')
+          .select('id, room_number, building, device_pairing_code')
+          .order('room_number');
+
+        if (rooms && rooms.length > 0) {
+          setClassroomsList(rooms);
+          setNewSessionForm((prev) => ({
+            ...prev,
+            classroomId: prev.classroomId || rooms[0].id,
+          }));
+        }
+      } catch (e) {
+        console.warn('Failed to load courses/rooms for session creator:', e);
+      }
+    }
+
+    loadCreationData();
+  }, [facultyRecord?.id]);
+
   // 1. Fetch sessions conducted by this faculty or active sessions
   const fetchSessions = useCallback(async () => {
     try {
-      const { data, error } = await supabase
+      let query = supabase
         .from('attendance_sessions')
         .select(`
           id, session_date, start_time, end_time, session_type, status, is_attendance_locked, secret_seed,
@@ -92,6 +156,12 @@ export const LiveSessionManager: React.FC<LiveSessionManagerProps> = ({ initialS
         .order('session_date', { ascending: false })
         .order('start_time', { ascending: false });
 
+      if (facultyRecord?.id) {
+        query = query.eq('faculty_id', facultyRecord.id);
+      }
+
+      const { data, error } = await query;
+
       if (error) throw error;
 
       if (data && data.length > 0) {
@@ -101,12 +171,21 @@ export const LiveSessionManager: React.FC<LiveSessionManagerProps> = ({ initialS
           || data[0];
         setSelectedSessionId(target.id);
         setActiveSession(target);
+      } else {
+        setSessionsList([]);
+        setActiveSession(null);
+        setSelectedSessionId('');
+        setRoster([]);
       }
     } catch (err: any) {
       console.error('Error fetching sessions:', err);
-      toast.error('Failed to load attendance sessions', err.message);
+      if (err.name !== 'AbortError') {
+        toast.error('Failed to load attendance sessions', err.message || 'Unable to fetch sessions');
+      }
+    } finally {
+      setLoading(false);
     }
-  }, [initialSessionId, toast]);
+  }, [facultyRecord?.id, initialSessionId, toast]);
 
   useEffect(() => {
     if (initialSessionId) {
@@ -120,17 +199,30 @@ export const LiveSessionManager: React.FC<LiveSessionManagerProps> = ({ initialS
 
   // 2. Fetch student roster & attendance records for the selected session
   const fetchSessionRoster = useCallback(async (sessionId: string) => {
-    if (!sessionId) return;
+    if (!sessionId) {
+      setRoster([]);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     try {
-      // Get session section ID
+      // Get session section ID safely with maybeSingle
       const { data: sessionData, error: sErr } = await supabase
         .from('attendance_sessions')
         .select('*, section:sections(*), classroom:classrooms(*), subject_offering:subject_offerings(subject:subjects(*))')
         .eq('id', sessionId)
-        .single();
+        .maybeSingle();
 
       if (sErr) throw sErr;
+
+      if (!sessionData) {
+        console.warn('Session not found for ID:', sessionId);
+        setActiveSession(null);
+        setRoster([]);
+        setLoading(false);
+        return;
+      }
+
       setActiveSession(sessionData);
 
       // Get all students enrolled in this session's section
@@ -154,12 +246,13 @@ export const LiveSessionManager: React.FC<LiveSessionManagerProps> = ({ initialS
       const recordMap = new Map(records?.map((r) => [r.student_id, r]) || []);
 
       const items: RosterItem[] = (students || []).map((st: any) => {
+        const prof = Array.isArray(st.profile) ? st.profile[0] : st.profile;
         const rec = recordMap.get(st.id);
         return {
           record_id: rec?.id,
           student_id: st.id,
           roll_number: st.roll_number,
-          student_name: `${st.profile?.first_name || ''} ${st.profile?.last_name || ''}`.trim(),
+          student_name: `${prof?.first_name || ''} ${prof?.last_name || ''}`.trim() || 'Student',
           status: rec ? rec.status : 'absent',
           marked_at: rec?.marked_at ? new Date(rec.marked_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : undefined,
           verification_method: rec?.verification_method,
@@ -170,7 +263,9 @@ export const LiveSessionManager: React.FC<LiveSessionManagerProps> = ({ initialS
       setRoster(items);
     } catch (err: any) {
       console.error('Error fetching roster:', err);
-      toast.error('Failed to load student roster', err.message);
+      if (err.name !== 'AbortError') {
+        toast.error('Failed to load student roster', err.message);
+      }
     } finally {
       setLoading(false);
     }
@@ -482,6 +577,69 @@ export const LiveSessionManager: React.FC<LiveSessionManagerProps> = ({ initialS
     }
   };
 
+  // Start New Live Attendance Session
+  const handleCreateNewSession = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newSessionForm.subjectOfferingId || !newSessionForm.sectionId || !newSessionForm.classroomId) {
+      toast.warning('Incomplete Details', 'Please select a subject offering, section, and classroom.');
+      return;
+    }
+
+    setCreatingSession(true);
+    try {
+      const now = new Date();
+      const todayDate = now.toISOString().split('T')[0];
+      const startTimeStr = now.toTimeString().split(' ')[0];
+      const endHour = new Date(now.getTime() + 60 * 60 * 1000);
+      const endTimeStr = endHour.toTimeString().split(' ')[0];
+
+      const { data: newSession, error: createErr } = await supabase
+        .from('attendance_sessions')
+        .insert({
+          faculty_id: facultyRecord?.id || null,
+          subject_offering_id: newSessionForm.subjectOfferingId,
+          section_id: newSessionForm.sectionId,
+          classroom_id: newSessionForm.classroomId,
+          session_date: todayDate,
+          start_time: startTimeStr,
+          end_time: endTimeStr,
+          session_type: newSessionForm.sessionType,
+          status: 'in_progress',
+          is_attendance_locked: false,
+          qr_expires_at: new Date(Date.now() + 36000000).toISOString(),
+        })
+        .select(`
+          id, session_date, start_time, end_time, session_type, status, is_attendance_locked, secret_seed,
+          subject_offering:subject_offerings(subject:subjects(name, code)),
+          classroom:classrooms(id, room_number, building, device_pairing_code),
+          section:sections(name),
+          faculty:faculty(employee_code, profile:profiles(first_name, last_name))
+        `)
+        .single();
+
+      if (createErr) throw createErr;
+
+      const roomName = (newSession.classroom as any)?.room_number || '';
+      const pairCode = (newSession.classroom as any)?.device_pairing_code || 'PAIR99';
+
+      toast.success(
+        'Session Started!',
+        `Attendance active for room ${roomName}. Smart Board pairing code: ${pairCode} on /display`
+      );
+
+      setShowNewSessionModal(false);
+      setSelectedSessionId(newSession.id);
+      setActiveSession(newSession);
+      await fetchSessions();
+      await fetchSessionRoster(newSession.id);
+    } catch (err: any) {
+      console.error('Error creating session:', err);
+      toast.error('Failed to create session', err.message);
+    } finally {
+      setCreatingSession(false);
+    }
+  };
+
   // Data Filtering, Sorting & Pagination
   const filteredRoster = useMemo(() => {
     let result = roster.filter((item) => {
@@ -558,78 +716,111 @@ export const LiveSessionManager: React.FC<LiveSessionManagerProps> = ({ initialS
       {/* Top Banner: Session Picker & Primary Controls */}
       <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <div className="flex flex-wrap items-center gap-2 mb-2">
-            <span className="px-2.5 py-0.5 text-xs font-bold rounded-md bg-indigo-50 text-indigo-700 border border-indigo-200">
-              {activeSession?.subject_offering?.subject?.code || 'CS501'} • {activeSession?.session_type?.toUpperCase() || 'LECTURE'}
-            </span>
-            <StatusBadge status={activeSession?.status || 'scheduled'} />
-            {activeSession?.is_attendance_locked && (
-              <span className="px-2.5 py-0.5 text-xs font-bold rounded-md bg-slate-100 text-slate-700 border border-slate-300 flex items-center gap-1">
-                <Lock className="h-3 w-3" /> AUDIT LOCKED
-              </span>
-            )}
-          </div>
+          {activeSession ? (
+            <>
+              <div className="flex flex-wrap items-center gap-2 mb-2">
+                <span className="px-2.5 py-0.5 text-xs font-bold rounded-md bg-indigo-50 text-indigo-700 border border-indigo-200">
+                  {activeSession?.subject_offering?.subject?.code || 'CS501'} • {activeSession?.session_type?.toUpperCase() || 'LECTURE'}
+                </span>
+                <StatusBadge status={activeSession?.status || 'scheduled'} />
+                {activeSession?.is_attendance_locked && (
+                  <span className="px-2.5 py-0.5 text-xs font-bold rounded-md bg-slate-100 text-slate-700 border border-slate-300 flex items-center gap-1">
+                    <Lock className="h-3 w-3" /> AUDIT LOCKED
+                  </span>
+                )}
+              </div>
 
-          <h1 className="text-2xl font-black text-slate-900 tracking-tight">
-            {activeSession?.subject_offering?.subject?.name || 'Operating Systems'}
-          </h1>
-          <p className="text-xs text-slate-500 font-medium mt-1">
-            Date: <span className="font-semibold text-slate-700">{activeSession?.session_date}</span> • Slot:{' '}
-            <span className="font-semibold text-slate-700">{activeSession?.start_time} - {activeSession?.end_time}</span> • Classroom:{' '}
-            <span className="font-semibold text-slate-700">{activeSession?.classroom?.room_number} ({activeSession?.classroom?.building})</span> • Section:{' '}
-            <span className="font-semibold text-slate-700">{activeSession?.section?.name}</span>
-          </p>
+              <h1 className="text-2xl font-black text-slate-900 tracking-tight">
+                {activeSession?.subject_offering?.subject?.name || 'Class Session'}
+              </h1>
+              <p className="text-xs text-slate-500 font-medium mt-1">
+                Date: <span className="font-semibold text-slate-700">{activeSession?.session_date}</span> • Slot:{' '}
+                <span className="font-semibold text-slate-700">{activeSession?.start_time} - {activeSession?.end_time}</span> • Classroom:{' '}
+                <span className="font-semibold text-slate-700">{activeSession?.classroom?.room_number} ({activeSession?.classroom?.building})</span> • Section:{' '}
+                <span className="font-semibold text-slate-700">{activeSession?.section?.name}</span>
+              </p>
+            </>
+          ) : (
+            <>
+              <div className="flex items-center gap-2 mb-2">
+                <span className="px-2.5 py-0.5 text-xs font-bold rounded-md bg-indigo-50 text-indigo-700 border border-indigo-200">
+                  FACULTY CONSOLE
+                </span>
+              </div>
+              <h1 className="text-2xl font-black text-slate-900 tracking-tight">
+                Live Attendance Manager
+              </h1>
+              <p className="text-xs text-slate-500 font-medium mt-1">
+                Select an existing lecture or launch a new live session with dynamic QR code.
+              </p>
+            </>
+          )}
         </div>
 
         {/* Action Buttons */}
         <div className="flex flex-wrap items-center gap-2">
           {/* Switch Session Dropdown */}
-          <select
-            value={selectedSessionId}
-            onChange={(e) => setSelectedSessionId(e.target.value)}
-            className="text-xs font-semibold py-2 px-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500"
-          >
-            {sessionsList.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.session_date} ({s.start_time.substring(0, 5)}) - {s.subject_offering?.subject?.code} ({s.status})
-              </option>
-            ))}
-          </select>
-
-          {activeSession?.status !== 'in_progress' ? (
-            <button
-              onClick={() => handleSessionStatusChange('in_progress')}
-              className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl shadow-sm flex items-center gap-1.5 transition-all"
+          {sessionsList.length > 0 && (
+            <select
+              value={selectedSessionId}
+              onChange={(e) => setSelectedSessionId(e.target.value)}
+              className="text-xs font-semibold py-2 px-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500"
             >
-              <Play className="h-4 w-4" /> Start Session
-            </button>
-          ) : (
-            <button
-              onClick={() => setShowEndSessionDialog(true)}
-              className="px-3.5 py-2 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-xl shadow-sm flex items-center gap-1.5 transition-all"
-            >
-              <Square className="h-4 w-4" /> End Session
-            </button>
+              {sessionsList.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.session_date} ({s.start_time.substring(0, 5)}) - {s.subject_offering?.subject?.code} ({s.status})
+                </option>
+              ))}
+            </select>
           )}
 
           <button
-            onClick={handleToggleLock}
-            className={`px-3.5 py-2 text-xs font-bold rounded-xl border flex items-center gap-1.5 transition-all ${
-              activeSession?.is_attendance_locked
-                ? 'bg-amber-50 text-amber-800 border-amber-300'
-                : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
-            }`}
+            onClick={() => setShowNewSessionModal(true)}
+            className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-xl shadow-sm flex items-center gap-1.5 transition-all cursor-pointer"
+            title="Start New Attendance Session"
           >
-            <Lock className="h-4 w-4" />
-            {activeSession?.is_attendance_locked ? 'Unlock' : 'Lock Roster'}
+            <Plus className="h-4 w-4" />
+            <span>New Session</span>
           </button>
 
-          <button
-            onClick={() => setShowSubmitReportModal(true)}
-            className="px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-xl shadow-sm flex items-center gap-1.5 transition-all"
-          >
-            <Send className="h-4 w-4" /> Submit Report
-          </button>
+          {activeSession && (
+            <>
+              {activeSession?.status !== 'in_progress' ? (
+                <button
+                  onClick={() => handleSessionStatusChange('in_progress')}
+                  className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl shadow-sm flex items-center gap-1.5 transition-all"
+                >
+                  <Play className="h-4 w-4" /> Start Session
+                </button>
+              ) : (
+                <button
+                  onClick={() => setShowEndSessionDialog(true)}
+                  className="px-3.5 py-2 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-xl shadow-sm flex items-center gap-1.5 transition-all"
+                >
+                  <Square className="h-4 w-4" /> End Session
+                </button>
+              )}
+
+              <button
+                onClick={handleToggleLock}
+                className={`px-3.5 py-2 text-xs font-bold rounded-xl border flex items-center gap-1.5 transition-all ${
+                  activeSession?.is_attendance_locked
+                    ? 'bg-amber-50 text-amber-800 border-amber-300'
+                    : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
+                }`}
+              >
+                <Lock className="h-4 w-4" />
+                {activeSession?.is_attendance_locked ? 'Unlock' : 'Lock Roster'}
+              </button>
+
+              <button
+                onClick={() => setShowSubmitReportModal(true)}
+                className="px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-xl shadow-sm flex items-center gap-1.5 transition-all"
+              >
+                <Send className="h-4 w-4" /> Submit Report
+              </button>
+            </>
+          )}
 
           <a
             href="/display"
@@ -643,6 +834,27 @@ export const LiveSessionManager: React.FC<LiveSessionManagerProps> = ({ initialS
           </a>
         </div>
       </div>
+
+      {!activeSession ? (
+        <div className="bg-white rounded-2xl p-12 border border-slate-200 shadow-sm text-center">
+          <div className="w-16 h-16 rounded-2xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 mx-auto mb-4">
+            <Radio className="w-8 h-8 text-indigo-600 animate-pulse" />
+          </div>
+          <h2 className="text-xl font-black text-slate-800 tracking-tight">No Active Attendance Session Selected</h2>
+          <p className="text-xs text-slate-500 max-w-md mx-auto mt-2">
+            You do not have an active live session running. Click below to launch a live attendance session with dynamic QR code for your class.
+          </p>
+          <div className="mt-6 flex justify-center gap-3">
+            <button
+              onClick={() => setShowNewSessionModal(true)}
+              className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-xl shadow-lg shadow-indigo-600/30 inline-flex items-center gap-2 cursor-pointer transition-all"
+            >
+              <Plus className="w-4 h-4" /> Start New Attendance Session
+            </button>
+          </div>
+        </div>
+      ) : (
+        <>
 
       {/* Prominent Smart Board Pairing Code & Live Sync Banner */}
       <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 rounded-2xl p-5 border border-indigo-500/40 text-white shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -881,6 +1093,8 @@ export const LiveSessionManager: React.FC<LiveSessionManagerProps> = ({ initialS
           onPageSizeChange={setPageSize}
         />
       </div>
+      </>
+      )}
 
       {/* Manual Attendance Marking / Correction Modal */}
       {selectedStudentForManual && (
@@ -1029,6 +1243,112 @@ export const LiveSessionManager: React.FC<LiveSessionManagerProps> = ({ initialS
         confirmText="End & Finalize Attendance"
         variant="warning"
       />
+
+      {/* Start New Session Modal */}
+      {showNewSessionModal && (
+        <Modal
+          isOpen={true}
+          onClose={() => setShowNewSessionModal(false)}
+          title="Start Live Attendance Session"
+          subtitle="Generate dynamic rotating QR code for classroom Smart Board"
+          maxWidth="md"
+        >
+          <form onSubmit={handleCreateNewSession} className="space-y-4">
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">
+                Select Course & Section <span className="text-rose-500">*</span>
+              </label>
+              {assignedCourses.length === 0 ? (
+                <p className="text-xs text-amber-700 bg-amber-50 p-2.5 rounded-xl border border-amber-200">
+                  No courses currently assigned to your faculty profile. Please contact Directorate.
+                </p>
+              ) : (
+                <select
+                  value={`${newSessionForm.subjectOfferingId}::${newSessionForm.sectionId}`}
+                  onChange={(e) => {
+                    const [offeringId, secId] = e.target.value.split('::');
+                    setNewSessionForm((prev) => ({
+                      ...prev,
+                      subjectOfferingId: offeringId,
+                      sectionId: secId,
+                    }));
+                  }}
+                  className="w-full text-xs p-2.5 rounded-xl border border-slate-300 focus:ring-2 focus:ring-indigo-500 font-medium"
+                  required
+                >
+                  {assignedCourses.map((c: any) => {
+                    const off = Array.isArray(c.subject_offering) ? c.subject_offering[0] : c.subject_offering;
+                    const sec = Array.isArray(c.section) ? c.section[0] : c.section;
+                    const subj = Array.isArray(off?.subject) ? off?.subject[0] : off?.subject;
+                    return (
+                      <option key={c.id} value={`${off?.id}::${sec?.id}`}>
+                        {subj?.code || 'SUBJ'} - {subj?.name || 'Subject'} ({sec?.name || 'Section'})
+                      </option>
+                    );
+                  })}
+                </select>
+              )}
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">
+                Classroom / Lecture Hall <span className="text-rose-500">*</span>
+              </label>
+              {classroomsList.length === 0 ? (
+                <p className="text-xs text-amber-700 bg-amber-50 p-2.5 rounded-xl border border-amber-200">
+                  No classrooms registered.
+                </p>
+              ) : (
+                <select
+                  value={newSessionForm.classroomId}
+                  onChange={(e) => setNewSessionForm((prev) => ({ ...prev, classroomId: e.target.value }))}
+                  className="w-full text-xs p-2.5 rounded-xl border border-slate-300 focus:ring-2 focus:ring-indigo-500 font-medium"
+                  required
+                >
+                  {classroomsList.map((r) => (
+                    <option key={r.id} value={r.id}>
+                      Room {r.room_number} ({r.building}) — Code: {r.device_pairing_code || 'PAIR99'}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">Session Type</label>
+              <select
+                value={newSessionForm.sessionType}
+                onChange={(e) =>
+                  setNewSessionForm((prev) => ({ ...prev, sessionType: e.target.value as any }))
+                }
+                className="w-full text-xs p-2.5 rounded-xl border border-slate-300 focus:ring-2 focus:ring-indigo-500 font-medium"
+              >
+                <option value="lecture">Regular Theory Lecture</option>
+                <option value="lab">Practical / Lab Session</option>
+                <option value="tutorial">Tutorial / Doubt Class</option>
+              </select>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setShowNewSessionModal(false)}
+                className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={creatingSession || assignedCourses.length === 0 || classroomsList.length === 0}
+                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl shadow-sm disabled:opacity-50 flex items-center gap-1.5 cursor-pointer"
+              >
+                <Radio className="w-4 h-4 animate-pulse" />
+                {creatingSession ? 'Activating Session...' : 'Start Session & Broadcast QR'}
+              </button>
+            </div>
+          </form>
+        </Modal>
+      )}
     </div>
   );
 };

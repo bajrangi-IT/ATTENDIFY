@@ -45,13 +45,19 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
       setLoading(true);
       try {
         // 1. Fetch faculty assignments
-        const { data: assignments, error: aErr } = await supabase
+        let aQuery = supabase
           .from('faculty_assignments')
           .select(`
             id, is_primary,
             section:sections(id, name, semester:semesters(semester_number, program:programs(name, code))),
             subject_offering:subject_offerings(id, subject:subjects(id, name, code, credits))
           `);
+
+        if (facultyRecord?.id) {
+          aQuery = aQuery.eq('faculty_id', facultyRecord.id);
+        }
+
+        const { data: assignments, error: aErr } = await aQuery;
 
         if (aErr) throw aErr;
         setAssignedSubjects(assignments || []);
@@ -61,10 +67,10 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
         const { data: schedule, error: scErr } = await supabase
           .from('timetable_entries')
           .select(`
-            id, day_of_week, start_time, end_time,
-            classroom:classrooms(room_number, building),
-            section:sections(name),
-            subject_offering:subject_offerings(subject:subjects(name, code))
+            id, day_of_week, start_time, end_time, classroom_id, section_id, subject_offering_id,
+            classroom:classrooms(id, room_number, building),
+            section:sections(id, name),
+            subject_offering:subject_offerings(id, subject:subjects(id, name, code))
           `)
           .eq('day_of_week', currentDay)
           .order('start_time');
@@ -73,9 +79,15 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
         setTodaySchedule(schedule || []);
 
         // 3. Fetch summary metrics from database
-        const { data: sessions, error: sessErr } = await supabase
+        let sessQuery = supabase
           .from('attendance_sessions')
           .select('id, status');
+
+        if (facultyRecord?.id) {
+          sessQuery = sessQuery.eq('faculty_id', facultyRecord.id);
+        }
+
+        const { data: sessions, error: sessErr } = await sessQuery;
 
         if (sessErr) throw sessErr;
 
@@ -83,14 +95,14 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
         const active = sessions?.find((s) => s.status === 'in_progress')?.id || null;
 
         // Fetch defaulter count (< 75%) from view
-        const { data: summaryView, error: vErr } = await supabase
+        const { data: summaryView } = await supabase
           .from('v_student_attendance_summary')
           .select('attendance_percentage, threshold_status');
 
         let avg = 0;
         let risk = 0;
         if (summaryView && summaryView.length > 0) {
-          const totalPct = summaryView.reduce((acc, row) => acc + parseFloat(row.attendance_percentage), 0);
+          const totalPct = summaryView.reduce((acc, row) => acc + parseFloat(row.attendance_percentage || 0), 0);
           avg = Math.round((totalPct / summaryView.length) * 10) / 10;
           risk = summaryView.filter((row) => row.threshold_status === 'critical').length;
         }
@@ -112,41 +124,118 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
     loadTeacherData();
   }, [facultyRecord, toast]);
 
-  const handleStartAttendanceSession = async (customSessionId?: string | null) => {
+  const handleStartAttendanceSession = async (options?: {
+    subjectOfferingId?: string;
+    sectionId?: string;
+    classroomId?: string;
+    timetableEntryId?: string;
+    sessionId?: string;
+  }) => {
     try {
-      let targetId = customSessionId || stats.activeSessionId;
-      if (!targetId) {
-        // Query latest session for classroom LH-101
-        const { data: latestSess } = await supabase
-          .from('attendance_sessions')
-          .select('id')
-          .order('session_date', { ascending: false })
-          .order('start_time', { ascending: false })
-          .limit(1)
-          .maybeSingle();
-
-        targetId = latestSess?.id || 'c0000000-0000-0000-0000-000000000099';
+      // 1. If active session already known
+      if (options?.sessionId) {
+        onNavigateToSession?.(options.sessionId);
+        return;
       }
 
-      await supabase
+      if (stats.activeSessionId) {
+        onNavigateToSession?.(stats.activeSessionId);
+        return;
+      }
+
+      // Check database for any currently in_progress session for this faculty
+      let existingQuery = supabase
         .from('attendance_sessions')
-        .update({
+        .select('id, classroom:classrooms(room_number, device_pairing_code)')
+        .eq('status', 'in_progress');
+
+      if (facultyRecord?.id) {
+        existingQuery = existingQuery.eq('faculty_id', facultyRecord.id);
+      }
+
+      const { data: existingActive } = await existingQuery
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (existingActive?.id) {
+        toast.info('Active Session Resumed', 'Redirecting to your ongoing live attendance session.');
+        onNavigateToSession?.(existingActive.id);
+        return;
+      }
+
+      // 2. Resolve target subject_offering, section, and classroom
+      let offeringId = options?.subjectOfferingId;
+      let sectionId = options?.sectionId;
+      let classroomId = options?.classroomId;
+      let timetableEntryId = options?.timetableEntryId;
+
+      if (!offeringId || !sectionId) {
+        if (assignedSubjects.length > 0) {
+          offeringId = assignedSubjects[0].subject_offering?.id;
+          sectionId = assignedSubjects[0].section?.id;
+        }
+      }
+
+      if (!classroomId) {
+        const { data: roomList } = await supabase
+          .from('classrooms')
+          .select('id, room_number, device_pairing_code')
+          .limit(1);
+        classroomId = roomList?.[0]?.id;
+      }
+
+      if (!offeringId || !sectionId || !classroomId) {
+        toast.warning(
+          'Setup Required',
+          'Please ensure subjects, sections, and classrooms are configured in Academic Setup.'
+        );
+        return;
+      }
+
+      // 3. Create a real new attendance session
+      const now = new Date();
+      const todayDate = now.toISOString().split('T')[0];
+      const startTimeStr = now.toTimeString().split(' ')[0]; // HH:MM:SS
+      const endHour = new Date(now.getTime() + 60 * 60 * 1000);
+      const endTimeStr = endHour.toTimeString().split(' ')[0]; // HH:MM:SS
+
+      const { data: newSession, error: createErr } = await supabase
+        .from('attendance_sessions')
+        .insert({
+          faculty_id: facultyRecord?.id || null,
+          subject_offering_id: offeringId,
+          section_id: sectionId,
+          classroom_id: classroomId,
+          timetable_entry_id: timetableEntryId || null,
+          session_date: todayDate,
+          start_time: startTimeStr,
+          end_time: endTimeStr,
+          session_type: 'lecture',
           status: 'in_progress',
           is_attendance_locked: false,
           qr_expires_at: new Date(Date.now() + 36000000).toISOString(),
-          updated_at: new Date().toISOString(),
         })
-        .eq('id', targetId);
+        .select(`
+          id,
+          classroom:classrooms(room_number, device_pairing_code)
+        `)
+        .single();
+
+      if (createErr) throw createErr;
+
+      const roomName = (newSession?.classroom as any)?.room_number || 'Classroom';
+      const pairCode = (newSession?.classroom as any)?.device_pairing_code || 'PAIR99';
 
       toast.success(
         'Class Attendance Activated!',
-        'Room LH-101 pairing code PAIR99 is active and ready on /display.'
+        `Room ${roomName} pairing code ${pairCode} is live and ready on /display.`
       );
 
-      onNavigateToSession?.(targetId || undefined);
+      onNavigateToSession?.(newSession.id);
     } catch (err: any) {
-      console.warn('Error activating session:', err);
-      onNavigateToSession?.();
+      console.error('Error activating session:', err);
+      toast.error('Failed to start attendance session', err.message);
     }
   };
 
@@ -168,7 +257,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
 
         <div className="flex items-center gap-3">
           <button
-            onClick={() => handleStartAttendanceSession(stats.activeSessionId || undefined)}
+            onClick={() => handleStartAttendanceSession(stats.activeSessionId ? { sessionId: stats.activeSessionId } : undefined)}
             className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-xl shadow-lg shadow-indigo-600/30 flex items-center gap-2 transition-all cursor-pointer"
           >
             <Radio className="h-4 w-4" />
@@ -270,7 +359,12 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                     </div>
 
                     <button
-                      onClick={() => handleStartAttendanceSession()}
+                      onClick={() =>
+                        handleStartAttendanceSession({
+                          subjectOfferingId: item.subject_offering?.id,
+                          sectionId: item.section?.id,
+                        })
+                      }
                       className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-xl shadow-sm flex items-center gap-1.5 transition-all cursor-pointer"
                     >
                       <Radio className="h-3.5 w-3.5 text-indigo-200 animate-pulse" />
@@ -331,7 +425,14 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                     </div>
 
                     <button
-                      onClick={() => handleStartAttendanceSession()}
+                      onClick={() =>
+                        handleStartAttendanceSession({
+                          subjectOfferingId: slot.subject_offering_id || slot.subject_offering?.id,
+                          sectionId: slot.section_id || slot.section?.id,
+                          classroomId: slot.classroom_id || slot.classroom?.id,
+                          timetableEntryId: slot.id,
+                        })
+                      }
                       className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-xl shadow-sm flex items-center gap-1.5 transition-all cursor-pointer"
                     >
                       <Radio className="h-3.5 w-3.5 text-indigo-200 animate-pulse" />
