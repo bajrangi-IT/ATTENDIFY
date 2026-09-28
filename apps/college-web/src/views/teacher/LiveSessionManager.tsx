@@ -406,9 +406,20 @@ export const LiveSessionManager: React.FC<LiveSessionManagerProps> = ({ initialS
           }, { onConflict: 'session_id' });
       }
 
+      // Expire and rotate the classroom pairing OTP code so it cannot be reused today
+      if (activeSession.classroom_id) {
+        try {
+          await supabase.rpc('rpc_generate_classroom_otp', {
+            p_classroom_id: activeSession.classroom_id,
+          });
+        } catch (e) {
+          // ignore
+        }
+      }
+
       toast.success(
         'Session Attendance Finalized',
-        'Smart Board QR closed. All attendee names saved and report submitted to Director.'
+        'Smart Board QR closed. OTP expired. Attendee report submitted to Director.'
       );
 
       setActiveSession((prev: any) => ({ ...prev, status: 'completed', is_attendance_locked: true }));
@@ -587,6 +598,20 @@ export const LiveSessionManager: React.FC<LiveSessionManagerProps> = ({ initialS
 
     setCreatingSession(true);
     try {
+      // 1. Generate unique 6-digit OTP for this classroom session
+      let sessionOtp = Math.floor(100000 + Math.random() * 900000).toString();
+      try {
+        const { data: rpcOtp } = await supabase.rpc('rpc_generate_classroom_otp', {
+          p_classroom_id: newSessionForm.classroomId,
+        });
+        if (rpcOtp) sessionOtp = rpcOtp;
+      } catch (e) {
+        await supabase
+          .from('classrooms')
+          .update({ device_pairing_code: sessionOtp })
+          .eq('id', newSessionForm.classroomId);
+      }
+
       const now = new Date();
       const todayDate = now.toISOString().split('T')[0];
       const startTimeStr = now.toTimeString().split(' ')[0];
@@ -620,11 +645,11 @@ export const LiveSessionManager: React.FC<LiveSessionManagerProps> = ({ initialS
       if (createErr) throw createErr;
 
       const roomName = (newSession.classroom as any)?.room_number || '';
-      const pairCode = (newSession.classroom as any)?.device_pairing_code || 'PAIR99';
+      const pairCode = sessionOtp || (newSession.classroom as any)?.device_pairing_code;
 
       toast.success(
         'Session Started!',
-        `Attendance active for room ${roomName}. Smart Board pairing code: ${pairCode} on /display`
+        `Attendance active for room ${roomName}. Smart Board 6-Digit OTP: ${pairCode} on /display`
       );
 
       setShowNewSessionModal(false);
@@ -637,6 +662,38 @@ export const LiveSessionManager: React.FC<LiveSessionManagerProps> = ({ initialS
       toast.error('Failed to create session', err.message);
     } finally {
       setCreatingSession(false);
+    }
+  };
+
+  // Regenerate dynamic 6-digit OTP for current classroom session
+  const handleRegenerateOtp = async () => {
+    const cId = activeSession?.classroom_id || activeSession?.classroom?.id;
+    if (!cId) return;
+    try {
+      let newOtp = Math.floor(100000 + Math.random() * 900000).toString();
+      try {
+        const { data: rpcOtp } = await supabase.rpc('rpc_generate_classroom_otp', {
+          p_classroom_id: cId,
+        });
+        if (rpcOtp) newOtp = rpcOtp;
+      } catch (e) {
+        await supabase
+          .from('classrooms')
+          .update({ device_pairing_code: newOtp })
+          .eq('id', cId);
+      }
+
+      setActiveSession((prev: any) => ({
+        ...prev,
+        classroom: {
+          ...prev?.classroom,
+          device_pairing_code: newOtp,
+        },
+      }));
+      toast.success('OTP Refreshed', `New 6-Digit Smart Board OTP Code: ${newOtp}`);
+      fetchSessions();
+    } catch (err: any) {
+      toast.error('Failed to regenerate OTP', err.message);
     }
   };
 
@@ -877,18 +934,29 @@ export const LiveSessionManager: React.FC<LiveSessionManagerProps> = ({ initialS
               )}
             </div>
 
-            <div className="flex flex-wrap items-baseline gap-2.5 mt-1.5">
-              <span className="text-xs text-slate-300 font-medium">Smart Board Pairing Code:</span>
-              <span className="font-mono text-2xl font-black text-amber-300 tracking-widest bg-slate-950/90 px-3 py-1 rounded-xl border border-amber-400/50 select-all shadow-inner">
-                {activeSession?.classroom?.device_pairing_code || 'PAIR99'}
-              </span>
+            <div className="flex flex-wrap items-center gap-2.5 mt-1.5">
+              <span className="text-xs text-slate-300 font-medium">Smart Board 6-Digit OTP:</span>
+              <div className="flex items-center gap-2">
+                <span className="font-mono text-2xl font-black text-amber-300 tracking-widest bg-slate-950/90 px-3.5 py-1 rounded-xl border border-amber-400/50 select-all shadow-inner">
+                  {activeSession?.classroom?.device_pairing_code || '------'}
+                </span>
+                {activeSession?.status === 'in_progress' && (
+                  <button
+                    onClick={handleRegenerateOtp}
+                    className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-amber-300 border border-slate-700 transition cursor-pointer"
+                    title="Generate New 6-Digit OTP"
+                  >
+                    <RotateCcw className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
               <span className="text-xs text-slate-400">
-                (Room: <strong className="text-white">{activeSession?.classroom?.room_number || 'LH-101'}</strong>)
+                (Room: <strong className="text-white">{activeSession?.classroom?.room_number || 'Room'}</strong>)
               </span>
             </div>
 
             <p className="text-xs text-indigo-200/90 mt-1.5">
-              Enter this pairing code on the classroom Smart Board (<strong>/display</strong>) to project the dynamic QR code. Scans will sync here and on the board in real time!
+              Enter this 6-digit OTP on the classroom Smart Board (<strong>/display</strong>) to pair and project the dynamic QR code in real time!
             </p>
           </div>
         </div>
@@ -1307,7 +1375,7 @@ export const LiveSessionManager: React.FC<LiveSessionManagerProps> = ({ initialS
                 >
                   {classroomsList.map((r) => (
                     <option key={r.id} value={r.id}>
-                      Room {r.room_number} ({r.building}) — Code: {r.device_pairing_code || 'PAIR99'}
+                      Room {r.room_number} ({r.building}) {r.device_pairing_code ? `— OTP: ${r.device_pairing_code}` : ''}
                     </option>
                   ))}
                 </select>

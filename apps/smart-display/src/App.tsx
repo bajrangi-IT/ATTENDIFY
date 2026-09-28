@@ -194,9 +194,15 @@ export default function SmartDisplayApp() {
 
   // Handle device pairing
   const handlePairDevice = async (codeToUse?: string) => {
-    const rawCode = (codeToUse || pairingCodeInput).trim().toUpperCase();
+    const rawCode = (codeToUse || pairingCodeInput).trim();
     if (!rawCode) return;
-    const code = rawCode === 'LH101' ? 'PAIR99' : rawCode;
+
+    if (rawCode === 'PAIR99') {
+      setPairingError('PAIR99 is a deprecated demo code and cannot be used. Please enter the active 6-digit OTP from the Teacher Dashboard.');
+      return;
+    }
+
+    const code = rawCode;
 
     setIsPairingLoading(true);
     setPairingError(null);
@@ -210,7 +216,7 @@ export default function SmartDisplayApp() {
       });
 
       if (error || !data || !data.success) {
-        setPairingError(error?.message || data?.error || 'Invalid classroom pairing code. Use PAIR99 for Demo Room LH-101.');
+        setPairingError(error?.message || data?.error || 'Invalid or expired 6-digit classroom pairing OTP.');
         return;
       }
 
@@ -369,27 +375,28 @@ export default function SmartDisplayApp() {
           <div className="space-y-4">
             <div>
               <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">
-                Classroom Pairing Code
+                Classroom 6-Digit Pairing OTP
               </label>
               <input
                 type="text"
+                inputMode="numeric"
                 value={pairingCodeInput}
-                onChange={(e) => setPairingCodeInput(e.target.value.toUpperCase())}
-                placeholder="e.g. PAIR99"
-                maxLength={10}
+                onChange={(e) => setPairingCodeInput(e.target.value.replace(/[^0-9]/g, '').slice(0, 6))}
+                placeholder="e.g. 582914"
+                maxLength={6}
                 className="w-full bg-slate-950 border border-slate-700 rounded-2xl px-5 py-4 text-center text-3xl font-mono tracking-widest text-white uppercase focus:outline-none focus:border-indigo-500 transition-colors shadow-inner"
               />
             </div>
 
             <button
               onClick={() => handlePairDevice()}
-              disabled={isPairingLoading || !pairingCodeInput.trim()}
+              disabled={isPairingLoading || pairingCodeInput.trim().length !== 6}
               className="w-full py-4 rounded-2xl bg-indigo-600 hover:bg-indigo-500 active:scale-[0.99] disabled:opacity-50 text-white font-semibold text-lg flex items-center justify-center gap-2 shadow-lg shadow-indigo-600/30 transition-all cursor-pointer"
             >
               {isPairingLoading ? (
                 <>
                   <RefreshCw className="w-5 h-5 animate-spin" />
-                  Authenticating Device...
+                  Authenticating OTP...
                 </>
               ) : (
                 <>
@@ -398,33 +405,6 @@ export default function SmartDisplayApp() {
                 </>
               )}
             </button>
-          </div>
-
-          <div className="mt-8 pt-6 border-t border-slate-800">
-            <p className="text-xs text-slate-500 text-center mb-3">Or 1-click quick-pair for demo classrooms:</p>
-            <div className="grid grid-cols-3 gap-2">
-              <button
-                onClick={() => handlePairDevice('PAIR99')}
-                className="px-3 py-2 rounded-xl bg-indigo-600/20 hover:bg-indigo-600/30 text-xs font-mono text-indigo-300 border border-indigo-500/40 flex flex-col items-center gap-1 cursor-pointer transition-colors"
-              >
-                <span className="font-bold text-white">LH-101</span>
-                <span className="text-indigo-400 font-bold">PAIR99</span>
-              </button>
-              <button
-                onClick={() => handlePairDevice('TRG204')}
-                className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-mono text-slate-300 border border-slate-700 flex flex-col items-center gap-1 cursor-pointer transition-colors"
-              >
-                <span className="font-bold text-white">LH-204</span>
-                <span className="text-slate-400">TRG204</span>
-              </button>
-              <button
-                onClick={() => handlePairDevice('CSL003')}
-                className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-mono text-slate-300 border border-slate-700 flex flex-col items-center gap-1 cursor-pointer transition-colors"
-              >
-                <span className="font-bold text-white">CS-LAB3</span>
-                <span className="text-slate-400">CSL003</span>
-              </button>
-            </div>
           </div>
         </main>
 

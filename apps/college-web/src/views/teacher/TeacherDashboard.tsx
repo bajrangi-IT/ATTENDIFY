@@ -193,7 +193,21 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
         return;
       }
 
-      // 3. Create a real new attendance session
+      // 3. Generate dynamic 6-digit OTP for this classroom session
+      let sessionOtp = Math.floor(100000 + Math.random() * 900000).toString();
+      try {
+        const { data: rpcOtp } = await supabase.rpc('rpc_generate_classroom_otp', {
+          p_classroom_id: classroomId,
+        });
+        if (rpcOtp) sessionOtp = rpcOtp;
+      } catch (e) {
+        await supabase
+          .from('classrooms')
+          .update({ device_pairing_code: sessionOtp })
+          .eq('id', classroomId);
+      }
+
+      // 4. Create a real new attendance session
       const now = new Date();
       const todayDate = now.toISOString().split('T')[0];
       const startTimeStr = now.toTimeString().split(' ')[0]; // HH:MM:SS
@@ -225,11 +239,11 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
       if (createErr) throw createErr;
 
       const roomName = (newSession?.classroom as any)?.room_number || 'Classroom';
-      const pairCode = (newSession?.classroom as any)?.device_pairing_code || 'PAIR99';
+      const pairCode = sessionOtp || (newSession?.classroom as any)?.device_pairing_code;
 
       toast.success(
         'Class Attendance Activated!',
-        `Room ${roomName} pairing code ${pairCode} is live and ready on /display.`
+        `Room ${roomName} Smart Board 6-Digit OTP: ${pairCode} is live and ready on /display.`
       );
 
       onNavigateToSession?.(newSession.id);
