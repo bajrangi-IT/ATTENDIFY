@@ -62,18 +62,23 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
         if (aErr) throw aErr;
         setAssignedSubjects(assignments || []);
 
-        // 2. Fetch today's schedule
+        // 2. Fetch today's schedule (scoped to this faculty)
         const currentDay = new Date().getDay() || 7; // Sunday = 7
-        const { data: schedule, error: scErr } = await supabase
+        let schedQuery = supabase
           .from('timetable_entries')
           .select(`
-            id, day_of_week, start_time, end_time, classroom_id, section_id, subject_offering_id,
+            id, day_of_week, start_time, end_time, classroom_id, section_id, subject_offering_id, faculty_id,
             classroom:classrooms(id, room_number, building),
             section:sections(id, name),
             subject_offering:subject_offerings(id, subject:subjects(id, name, code))
           `)
-          .eq('day_of_week', currentDay)
-          .order('start_time');
+          .eq('day_of_week', currentDay);
+
+        if (facultyRecord?.id) {
+          schedQuery = schedQuery.eq('faculty_id', facultyRecord.id);
+        }
+
+        const { data: schedule, error: scErr } = await schedQuery.order('start_time');
 
         if (scErr) throw scErr;
         setTodaySchedule(schedule || []);
@@ -94,10 +99,16 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
         const held = sessions?.filter((s) => s.status === 'completed' || s.status === 'audit_locked').length || 0;
         const active = sessions?.find((s) => s.status === 'in_progress')?.id || null;
 
-        // Fetch defaulter count (< 75%) from view
-        const { data: summaryView } = await supabase
+        // Fetch defaulter count (< 75%) from view - scoped to department
+        let summaryQuery = supabase
           .from('v_student_attendance_summary')
-          .select('attendance_percentage, threshold_status');
+          .select('attendance_percentage, threshold_status, department_id');
+
+        if (facultyRecord?.department_id) {
+          summaryQuery = summaryQuery.eq('department_id', facultyRecord.department_id);
+        }
+
+        const { data: summaryView } = await summaryQuery;
 
         let avg = 0;
         let risk = 0;

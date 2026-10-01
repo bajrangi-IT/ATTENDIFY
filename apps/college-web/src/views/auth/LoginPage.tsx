@@ -95,20 +95,21 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onOpenDisp
         await switchInstitution(selectedSchoolId);
       }
 
-      const res = await signIn(email.trim(), password, selectedSchoolId);
+      const res = await signIn(email.trim(), password, selectedSchoolId, selectedRole);
       if (res.error) {
         addToast({
           title: 'Sign In Failed',
           message: res.error,
           type: 'error'
         });
+        return;
       } else {
         addToast({
           title: 'Welcome Back',
           message: 'Institutional credentials verified successfully.',
           type: 'success'
         });
-        onLoginSuccess?.(selectedRole);
+        onLoginSuccess?.(res.profile?.role || selectedRole);
       }
     } catch (err: any) {
       addToast({
@@ -225,13 +226,13 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onOpenDisp
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h1 className="text-lg sm:text-xl font-bold text-slate-900 tracking-tight">SDGI Global University</h1>
-              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200 font-mono">
+              <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">Attendify</h1>
+              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200 font-mono">
                 ERP
               </span>
             </div>
             <p className="text-xs text-slate-500 hidden sm:block">
-              Campus Academic Portal • Timetable, Attendance & Administration
+              SDGI Global University • Campus Academic Portal
             </p>
           </div>
         </div>
@@ -640,7 +641,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onOpenDisp
       {/* Footer */}
       <footer className="max-w-5xl mx-auto w-full pt-4 border-t border-slate-200 flex flex-col sm:flex-row justify-between items-center gap-2 text-xs text-slate-500">
         <div>
-          <span>SDGI Global University • Campus ERP</span>
+          <span>Attendify • SDGI Global University ERP</span>
         </div>
         <div className="flex items-center gap-3">
           <button

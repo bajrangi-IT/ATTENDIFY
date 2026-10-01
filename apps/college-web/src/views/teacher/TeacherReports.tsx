@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../../lib/supabase';
+import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
 import { exportToExcel, exportToPdf } from '../../lib/exportUtils';
 import { TablePagination } from '../../components/ui/TablePagination';
@@ -17,6 +18,7 @@ import {
 } from 'lucide-react';
 
 export const TeacherReports: React.FC = () => {
+  const { facultyRecord } = useAuth();
   const toast = useToast();
   const [loading, setLoading] = useState(true);
   const [reportsData, setReportsData] = useState<any[]>([]);
@@ -32,10 +34,15 @@ export const TeacherReports: React.FC = () => {
     async function fetchReports() {
       setLoading(true);
       try {
-        const { data, error } = await supabase
+        let query = supabase
           .from('v_student_attendance_summary')
-          .select('*')
-          .order('roll_number');
+          .select('*');
+
+        if (facultyRecord?.department_id) {
+          query = query.eq('department_id', facultyRecord.department_id);
+        }
+
+        const { data, error } = await query.order('roll_number');
 
         if (error) throw error;
         setReportsData(data || []);
@@ -48,7 +55,7 @@ export const TeacherReports: React.FC = () => {
     }
 
     fetchReports();
-  }, [toast]);
+  }, [facultyRecord?.department_id, toast]);
 
   // Unique subjects for filter
   const subjectsList = useMemo(() => {

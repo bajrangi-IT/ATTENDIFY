@@ -31,7 +31,7 @@ interface AuthContextType {
   isAuthenticated: boolean;
   loading: boolean;
   loginAsRole: (role: UserRole, targetInstitutionId?: string) => Promise<void>;
-  signIn: (email: string, pass: string, targetInstitutionId?: string) => Promise<{ error?: string }>;
+  signIn: (email: string, pass: string, targetInstitutionId?: string, expectedRole?: UserRole) => Promise<{ error?: string; profile?: Profile }>;
   signOut: () => Promise<void>;
   resetPassword: (email: string) => Promise<{ error?: string; success?: boolean }>;
   updateProfile: (data: Partial<Profile>) => Promise<{ error?: string; success?: boolean }>;
@@ -131,7 +131,19 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     } else if (prof.role === 'student') {
       const { data: stud } = await supabase
         .from('students')
-        .select('*, current_section:sections(*)')
+        .select(`
+          *,
+          current_section:sections(
+            *,
+            semester:semesters(
+              *,
+              program:programs(
+                *,
+                department:departments(*)
+              )
+            )
+          )
+        `)
         .eq('profile_id', prof.id)
         .maybeSingle();
       setStudentRecord(stud || null);
@@ -289,12 +301,43 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const signIn = async (
     email: string,
     pass: string,
-    targetInstitutionId?: string
-  ): Promise<{ error?: string }> => {
+    targetInstitutionId?: string,
+    expectedRole?: UserRole
+  ): Promise<{ error?: string; profile?: Profile }> => {
     try {
       setLoading(true);
       const cleanEmail = email.trim().toLowerCase();
       const cleanPass = pass.trim();
+
+      const roleDisplayNames: Record<string, string> = {
+        director: 'Director / Dean',
+        faculty: 'Faculty',
+        student: 'Student',
+        hod: 'HOD',
+        it_admin: 'IT Admin',
+        super_admin: 'Super Admin',
+      };
+
+      // Helper to check role mismatch and clear state if invalid
+      const checkRoleMismatch = async (actualRole: string) => {
+        if (expectedRole && actualRole !== expectedRole) {
+          await supabase.auth.signOut();
+          setIsAuthenticated(false);
+          setProfile(null);
+          setUser(null);
+          setFacultyRecord(null);
+          setStudentRecord(null);
+          localStorage.removeItem('campusattend_auth_user');
+
+          const actualLabel = roleDisplayNames[actualRole] || actualRole.toUpperCase();
+          const expectedLabel = roleDisplayNames[expectedRole] || expectedRole.toUpperCase();
+
+          return {
+            error: `Access Denied: This account is registered as a ${actualLabel}. You cannot sign in under the ${expectedLabel} tab. Please switch to the "${actualLabel}" tab.`
+          };
+        }
+        return null;
+      };
 
       // 1. Check custom registered directors/profiles in persistent storage
       const customProfiles: (Profile & { password?: string })[] = JSON.parse(
@@ -308,6 +351,10 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         if (matchedCustom.password && matchedCustom.password !== cleanPass && cleanPass !== 'CampusPass2026!') {
           return { error: 'Incorrect password for this institutional account.' };
         }
+
+        const roleErr = await checkRoleMismatch(matchedCustom.role);
+        if (roleErr) return roleErr;
+
         const instId = targetInstitutionId || matchedCustom.institution_id;
         await loadProfileDetails(matchedCustom, instId);
         setIsAuthenticated(true);
@@ -320,7 +367,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             institutionId: instId,
           })
         );
-        return {};
+        return { profile: matchedCustom };
       }
 
       // 2. Real Supabase auth attempt
@@ -339,6 +386,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           .maybeSingle();
 
         if (fallbackProf && (cleanPass === 'CampusPass2026!' || cleanPass.length > 0)) {
+          const roleErr = await checkRoleMismatch(fallbackProf.role);
+          if (roleErr) return roleErr;
+
           const instId = targetInstitutionId || fallbackProf.institution_id || DEFAULT_INSTITUTION_ID;
           const scopedProf = targetInstitutionId ? { ...fallbackProf, institution_id: targetInstitutionId } : fallbackProf;
           await loadProfileDetails(scopedProf, instId);
@@ -352,7 +402,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
               institutionId: instId,
             })
           );
-          return {};
+          return { profile: fallbackProf };
         }
 
         return { error: error.message };
@@ -365,7 +415,11 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           .select('*')
           .eq('user_id', data.user.id)
           .maybeSingle();
+
         if (prof) {
+          const roleErr = await checkRoleMismatch(prof.role);
+          if (roleErr) return roleErr;
+
           const instId = targetInstitutionId || prof.institution_id;
           await loadProfileDetails(prof, instId);
           setIsAuthenticated(true);
@@ -378,6 +432,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
               institutionId: instId,
             })
           );
+          return { profile: prof };
         }
       }
 

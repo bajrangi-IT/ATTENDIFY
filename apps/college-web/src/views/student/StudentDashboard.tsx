@@ -629,13 +629,17 @@ export const StudentDashboard: React.FC = () => {
           <div>
             <div className="flex items-center space-x-2 text-indigo-400 text-xs font-bold uppercase tracking-wider">
               <GraduationCap className="h-4 w-4" />
-              <span>CampusAttend Student Portal</span>
+              <span>Attendify • SDGI Global University</span>
             </div>
             <h1 className="text-2xl font-black mt-1">
               {studentInfo?.profile ? `${studentInfo.profile.first_name} ${studentInfo.profile.last_name}` : 'Student Dashboard'}
             </h1>
             <p className="text-slate-400 text-xs mt-1">
-              Roll No: <span className="text-white font-mono font-bold">{studentInfo?.roll_number || 'N/A'}</span> &bull; Section: <span className="text-white font-bold">{studentInfo?.current_section?.name || 'Assigned'}</span> &bull; Batch: <span className="text-white font-bold">{studentInfo?.batch_year || '2026'}</span>
+              Roll No: <span className="text-white font-mono font-bold">{studentInfo?.roll_number || 'N/A'}</span> &bull; 
+              Program: <span className="text-white font-bold">{studentInfo?.current_section?.semester?.program?.name || 'Academic Course'}</span> &bull; 
+              Dept: <span className="text-white font-bold">{studentInfo?.current_section?.semester?.program?.department?.name || 'Department'}</span> &bull; 
+              Section: <span className="text-white font-bold">{studentInfo?.current_section?.name || 'Assigned'}</span> &bull; 
+              Batch: <span className="text-white font-bold">{studentInfo?.batch_year || '2026'}</span>
             </p>
           </div>
 

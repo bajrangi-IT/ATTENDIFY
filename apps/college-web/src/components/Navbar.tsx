@@ -42,6 +42,8 @@ export const Navbar: React.FC<NavbarProps> = ({
     profile,
     role,
     institution,
+    facultyRecord,
+    studentRecord,
     resetPassword,
     updateProfile,
     signOut,
@@ -57,7 +59,6 @@ export const Navbar: React.FC<NavbarProps> = ({
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
   const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
   const [isEditProfileModalOpen, setIsEditProfileModalOpen] = useState(false);
-  const [isSchoolMenuOpen, setIsSchoolMenuOpen] = useState(false);
   const [isRegisterSchoolModalOpen, setIsRegisterSchoolModalOpen] = useState(false);
 
   // New School Modal state
@@ -295,80 +296,22 @@ export const Navbar: React.FC<NavbarProps> = ({
         </div>
         <div>
           <div className="flex items-center gap-1.5 sm:gap-2">
-            <span className="font-black text-slate-900 tracking-tight text-sm sm:text-lg">SDGI Global University</span>
-            <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
+            <span className="font-black text-indigo-950 tracking-tight text-base sm:text-xl">Attendify</span>
+            <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200 font-mono">
               ERP
             </span>
+            <span className="text-xs text-slate-300 font-light hidden sm:inline">•</span>
+            <span className="text-xs text-slate-600 font-semibold hidden sm:inline">SDGI Global University</span>
           </div>
-          <div className="relative">
-            <button
-              type="button"
-              onClick={() => setIsSchoolMenuOpen(!isSchoolMenuOpen)}
-              className="text-[11px] text-slate-600 hover:text-indigo-600 font-medium hidden sm:flex items-center gap-1.5 transition cursor-pointer hover:bg-slate-100 px-1.5 py-0.5 rounded-lg -ml-1"
-              title="Click to switch School / Campus or register a new campus"
-            >
-              <Building2 className="h-3.5 w-3.5 text-indigo-600 shrink-0" />
-              <span className="truncate max-w-[240px] font-semibold text-slate-800">
-                {institution?.name || 'School of Engineering & Technology'}
-              </span>
-              <ChevronDown className={`h-3 w-3 text-slate-400 transition-transform ${isSchoolMenuOpen ? 'rotate-180' : ''}`} />
-            </button>
-
-            {isSchoolMenuOpen && (
-              <div className="absolute left-0 mt-2 w-80 bg-white rounded-2xl border border-slate-200 shadow-2xl p-2 z-50 animate-in fade-in slide-in-from-top-1 text-xs">
-                <div className="px-3 py-2 border-b border-slate-100 flex items-center justify-between">
-                  <span className="font-bold text-slate-800 text-[11px] uppercase tracking-wider">
-                    Campuses & Schools ({institutionsList.length})
-                  </span>
-                  <span className="text-[10px] text-indigo-600 font-semibold">Active Scope</span>
-                </div>
-                <div className="max-h-56 overflow-y-auto py-1 space-y-0.5">
-                  {institutionsList.map((inst) => {
-                    const isSelected = inst.id === (institution?.id || currentInstitutionId);
-                    return (
-                      <button
-                        key={inst.id}
-                        type="button"
-                        onClick={async () => {
-                          await switchInstitution(inst.id);
-                          setIsSchoolMenuOpen(false);
-                          const displayCode = inst.code === 'SOET' ? 'SET' : inst.code;
-                          addToast({
-                            title: 'Campus Context Switched',
-                            message: `Now viewing ${inst.name} (${displayCode})`,
-                            type: 'info'
-                          });
-                        }}
-                        className={`w-full text-left px-3 py-2 rounded-xl flex items-center justify-between transition cursor-pointer ${
-                          isSelected ? 'bg-indigo-50/80 text-indigo-950 font-bold' : 'hover:bg-slate-50 text-slate-700'
-                        }`}
-                      >
-                        <div className="truncate pr-2">
-                          <div className="truncate font-semibold">{inst.name}</div>
-                          <div className="text-[10px] text-slate-400 font-mono">
-                            {inst.code === 'SOET' ? 'SET' : inst.code} • {inst.address ? inst.address.slice(0, 30) + '...' : 'Main Campus'}
-                          </div>
-                        </div>
-                        {isSelected && <Check className="h-4 w-4 text-indigo-600 shrink-0" />}
-                      </button>
-                    );
-                  })}
-                </div>
-                <div className="p-1 pt-1.5 border-t border-slate-100">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsSchoolMenuOpen(false);
-                      setIsRegisterSchoolModalOpen(true);
-                    }}
-                    className="w-full py-2 px-3 rounded-xl bg-purple-50 hover:bg-purple-100 text-purple-700 font-bold text-xs flex items-center justify-center gap-1.5 transition cursor-pointer"
-                  >
-                    <PlusCircle className="h-3.5 w-3.5" />
-                    <span>+ Register New School / Campus</span>
-                  </button>
-                </div>
-              </div>
-            )}
+          <div className="flex items-center gap-1.5 text-[11px] text-slate-600 font-medium mt-0.5">
+            <Building2 className="h-3 w-3 text-indigo-600 shrink-0" />
+            <span className="truncate max-w-[280px]">
+              {facultyRecord?.department?.name 
+                ? `${facultyRecord.department.name} (${facultyRecord.department.code || 'DEPT'})` 
+                : (studentRecord as any)?.current_section?.semester?.program?.department?.name
+                ? `${(studentRecord as any).current_section.semester.program.department.name} (${(studentRecord as any).current_section.name})`
+                : institution?.name ? `${institution.name} (${institution.code === 'SOET' ? 'SET' : institution.code})` : 'School of Engineering & Technology (SET)'}
+            </span>
           </div>
         </div>
       </div>
