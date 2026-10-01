@@ -122,6 +122,30 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
     }
 
     loadTeacherData();
+
+    // Setup realtime subscription for instant timetable & lecture synchronization
+    const channel = supabase
+      .channel('teacher_dashboard_sync_' + Date.now())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'timetable_entries' }, () => {
+        loadTeacherData();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'attendance_sessions' }, () => {
+        loadTeacherData();
+      })
+      .subscribe();
+
+    const handleSync = () => {
+      loadTeacherData();
+    };
+
+    window.addEventListener('campusattend:timetable-updated', handleSync);
+    window.addEventListener('campusattend:sessions-updated', handleSync);
+
+    return () => {
+      supabase.removeChannel(channel);
+      window.removeEventListener('campusattend:timetable-updated', handleSync);
+      window.removeEventListener('campusattend:sessions-updated', handleSync);
+    };
   }, [facultyRecord, toast]);
 
   const handleStartAttendanceSession = async (options?: {

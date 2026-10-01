@@ -80,10 +80,24 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           combined.push(custom);
         }
       }
-      return combined;
+
+      // Strictly normalize: School of Engineering & Technology must be SET, never SOET
+      const normalized = combined.map((item) => {
+        if (item.code === 'SOET' || item.name?.toLowerCase().includes('engineering & technology')) {
+          return { ...item, code: 'SET' };
+        }
+        return item;
+      });
+
+      return normalized;
     } catch {
       const customSchools = JSON.parse(localStorage.getItem('campusattend_custom_schools') || '[]');
-      return customSchools;
+      return customSchools.map((item: any) => {
+        if (item.code === 'SOET' || item.name?.toLowerCase().includes('engineering & technology')) {
+          return { ...item, code: 'SET' };
+        }
+        return item;
+      });
     }
   };
 

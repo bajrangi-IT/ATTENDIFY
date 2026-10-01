@@ -57,53 +57,53 @@ export const Sidebar: React.FC<SidebarProps> = ({
     switch (currentRole) {
       case 'faculty':
         return [
-          { id: 'teacher-dashboard' as NavTab, label: 'Teacher Overview', icon: Home },
-          { id: 'live-session' as NavTab, label: 'Live Attendance Console', icon: Radio, badge: 'REALTIME' },
-          { id: 'timetable' as NavTab, label: 'Assigned Timetable', icon: Calendar },
-          { id: 'teacher-reports' as NavTab, label: 'Reports & Shortage', icon: BarChart3 },
+          { id: 'teacher-dashboard' as NavTab, label: 'Overview', icon: Home },
+          { id: 'live-session' as NavTab, label: 'Live Attendance', icon: Radio, badge: 'LIVE' },
+          { id: 'timetable' as NavTab, label: 'Timetable', icon: Calendar },
+          { id: 'teacher-reports' as NavTab, label: 'Attendance Reports', icon: BarChart3 },
         ];
       case 'hod':
         return [
-          { id: 'hod-dashboard' as NavTab, label: 'HOD Department Console', icon: Building2, badge: 'DEPT' },
-          { id: 'faculty-directory' as NavTab, label: 'Department Faculty', icon: Users },
-          { id: 'live-session' as NavTab, label: 'Active Class Sessions', icon: Radio },
-          { id: 'timetable' as NavTab, label: 'Department Timetable', icon: Calendar },
-          { id: 'institutional-reports' as NavTab, label: 'Department Reports', icon: BarChart3 },
+          { id: 'hod-dashboard' as NavTab, label: 'Department Overview', icon: Building2 },
+          { id: 'faculty-directory' as NavTab, label: 'Faculty', icon: Users },
+          { id: 'live-session' as NavTab, label: 'Live Sessions', icon: Radio },
+          { id: 'timetable' as NavTab, label: 'Timetable', icon: Calendar },
+          { id: 'institutional-reports' as NavTab, label: 'Reports', icon: BarChart3 },
         ];
       case 'director':
         return [
-          { id: 'director-dashboard' as NavTab, label: 'Executive College Overview', icon: BarChart3 },
-          { id: 'institutional-reports' as NavTab, label: 'Institutional Reports', icon: BarChart3 },
-          { id: 'director-approvals' as NavTab, label: 'Session Report Approvals', icon: FileCheck },
-          { id: 'student-directory' as NavTab, label: 'Student Directory & Profiles', icon: Users },
-          { id: 'faculty-directory' as NavTab, label: 'Faculty & Academic Staff', icon: Users },
-          { id: 'academic-setup' as NavTab, label: 'Academic Setup & Structure', icon: Building2 },
-          { id: 'timetable' as NavTab, label: 'Master Campus Timetable', icon: Calendar },
-          { id: 'bulk-import' as NavTab, label: 'Bulk Data Imports', icon: FileSpreadsheet },
-          { id: 'audit-logs' as NavTab, label: 'Activity & Audit Logs', icon: ShieldAlert },
+          { id: 'director-dashboard' as NavTab, label: 'Campus Overview', icon: BarChart3 },
+          { id: 'institutional-reports' as NavTab, label: 'Attendance Reports', icon: BarChart3 },
+          { id: 'director-approvals' as NavTab, label: 'Approve Reports', icon: FileCheck },
+          { id: 'student-directory' as NavTab, label: 'Students', icon: Users },
+          { id: 'faculty-directory' as NavTab, label: 'Faculty', icon: Users },
+          { id: 'academic-setup' as NavTab, label: 'Academic Setup', icon: Building2 },
+          { id: 'timetable' as NavTab, label: 'Timetable', icon: Calendar },
+          { id: 'bulk-import' as NavTab, label: 'Data Import', icon: FileSpreadsheet },
+          { id: 'audit-logs' as NavTab, label: 'Audit Logs', icon: ShieldAlert },
         ];
       case 'it_admin':
         return [
-          { id: 'devices' as NavTab, label: 'Smart Displays & Kiosks', icon: MonitorCheck, badge: 'FLEET' },
-          { id: 'bulk-import' as NavTab, label: 'Bulk Data Ingestion Hub', icon: FileSpreadsheet },
-          { id: 'audit-logs' as NavTab, label: 'Technical Logs & Health', icon: ShieldAlert },
+          { id: 'devices' as NavTab, label: 'Classroom Displays', icon: MonitorCheck },
+          { id: 'bulk-import' as NavTab, label: 'Data Import', icon: FileSpreadsheet },
+          { id: 'audit-logs' as NavTab, label: 'Audit Logs', icon: ShieldAlert },
         ];
       case 'super_admin':
         return [
-          { id: 'director-dashboard' as NavTab, label: 'Institutional Overview', icon: BarChart3 },
-          { id: 'director-approvals' as NavTab, label: 'Report Review Workflow', icon: FileCheck },
-          { id: 'student-directory' as NavTab, label: 'Student Directory', icon: Users },
-          { id: 'faculty-directory' as NavTab, label: 'Faculty Directory', icon: Users },
-          { id: 'academic-setup' as NavTab, label: 'Academic Hierarchy', icon: Building2 },
-          { id: 'timetable' as NavTab, label: 'Master Timetable', icon: Calendar },
-          { id: 'devices' as NavTab, label: 'Hardware Kiosks', icon: MonitorCheck },
-          { id: 'bulk-import' as NavTab, label: 'Bulk Data Imports', icon: FileSpreadsheet },
-          { id: 'audit-logs' as NavTab, label: 'Full Security Audit', icon: ShieldAlert },
+          { id: 'director-dashboard' as NavTab, label: 'Campus Overview', icon: BarChart3 },
+          { id: 'director-approvals' as NavTab, label: 'Approve Reports', icon: FileCheck },
+          { id: 'student-directory' as NavTab, label: 'Students', icon: Users },
+          { id: 'faculty-directory' as NavTab, label: 'Faculty', icon: Users },
+          { id: 'academic-setup' as NavTab, label: 'Academic Setup', icon: Building2 },
+          { id: 'timetable' as NavTab, label: 'Timetable', icon: Calendar },
+          { id: 'devices' as NavTab, label: 'Displays', icon: MonitorCheck },
+          { id: 'bulk-import' as NavTab, label: 'Data Import', icon: FileSpreadsheet },
+          { id: 'audit-logs' as NavTab, label: 'Audit Logs', icon: ShieldAlert },
         ];
       case 'student':
         return [
-          { id: 'student-portal' as NavTab, label: 'Attendance Gauge & Portal', icon: CheckCircle2, badge: 'MY STATS' },
-          { id: 'timetable' as NavTab, label: "Weekly Schedule", icon: Clock },
+          { id: 'student-portal' as NavTab, label: 'My Attendance', icon: CheckCircle2 },
+          { id: 'timetable' as NavTab, label: 'Weekly Schedule', icon: Clock },
         ];
     }
   };
@@ -169,13 +169,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
       {/* Institutional Campus Status Footer */}
       <div className="p-4 border-t border-slate-800 text-xs">
-        <div className="bg-slate-800/80 rounded-xl p-3 border border-slate-700/60">
-          <div className="flex items-center space-x-2 text-indigo-400 font-semibold mb-1">
+        <div className="bg-slate-800/60 rounded-xl p-3 border border-slate-700/50">
+          <div className="flex items-center space-x-2 text-indigo-400 font-semibold mb-0.5">
             <Building2 className="h-4 w-4" />
-            <span className="text-[11px]">Academic ERP Unified Network</span>
+            <span className="text-[11px]">SDGI Global University</span>
           </div>
-          <p className="text-[11px] text-slate-400 leading-relaxed">
-            Multi-Campus Federated Attendance & Statutory Compliance System.
+          <p className="text-[10px] text-slate-400">
+            Campus Academic ERP
           </p>
         </div>
       </div>

@@ -977,7 +977,7 @@ export const AcademicSetup: React.FC = () => {
                 >
                   <div className="flex items-center justify-between mb-3">
                     <span className="px-2 py-0.5 text-[10px] font-bold rounded font-mono uppercase bg-white border border-slate-200 text-slate-700">
-                      {inst.code}
+                      {inst.code === 'SOET' ? 'SET' : inst.code}
                     </span>
                     {isCurrent ? (
                       <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-emerald-100 text-emerald-800 flex items-center gap-1">

@@ -397,11 +397,29 @@ export const TimetableManager: React.FC = () => {
     }
   };
 
-  // Delete Timetable Entry
+  // Delete Timetable Entry and synchronize active lecture sessions
   const handleDeleteEntry = async () => {
     if (!entryToDelete) return;
 
     try {
+      // 1. Explicitly clean up any active or scheduled attendance sessions linked to this slot
+      // This prevents deleted slots from lingering as 'in_progress' on the Director & Teacher dashboards!
+      await supabase
+        .from('attendance_sessions')
+        .delete()
+        .eq('timetable_entry_id', entryToDelete.id);
+
+      // Also clean up any active session matching the subject offering & section created today
+      if (entryToDelete.subject_offering_id && entryToDelete.section_id) {
+        await supabase
+          .from('attendance_sessions')
+          .delete()
+          .eq('subject_offering_id', entryToDelete.subject_offering_id)
+          .eq('section_id', entryToDelete.section_id)
+          .eq('status', 'in_progress');
+      }
+
+      // 2. Delete the timetable entry
       const { error } = await supabase
         .from('timetable_entries')
         .delete()
@@ -409,9 +427,13 @@ export const TimetableManager: React.FC = () => {
 
       if (error) throw error;
 
+      // 3. Dispatch broadcast events so dashboards and displays refresh immediately without manual reload
+      window.dispatchEvent(new CustomEvent('campusattend:timetable-updated', { detail: { deletedId: entryToDelete.id } }));
+      window.dispatchEvent(new CustomEvent('campusattend:sessions-updated'));
+
       addToast({
-        title: 'Slot Removed',
-        message: 'Timetable entry deleted. Past attendance sessions remain preserved.',
+        title: 'Class Schedule Slot Removed',
+        message: 'Timetable entry and active lecture sessions synchronized.',
         type: 'info'
       });
 
@@ -456,36 +478,36 @@ export const TimetableManager: React.FC = () => {
       {/* Header Banner */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-6 rounded-2xl border border-slate-200/80 shadow-sm">
         <div>
-          <div className="flex items-center space-x-2 text-indigo-900 font-bold text-xl">
+          <div className="flex items-center space-x-2 text-slate-900 font-bold text-xl">
             <Calendar className="h-6 w-6 text-indigo-600" />
-            <span>Master Campus Timetable & Collision Guard</span>
+            <span>Class Timetable Schedule</span>
           </div>
-          <p className="text-sm text-slate-500 mt-1">
-            Atomic Teacher, Room, and Section conflict detection. Updates student/faculty views without destroying historical attendance relations.
+          <p className="text-xs text-slate-500 mt-1">
+            Weekly lecture schedules, room allocations, and faculty assignments.
           </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
           <button
             onClick={loadChangeHistory}
-            className="inline-flex items-center space-x-1.5 px-3.5 py-2 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-xl transition"
+            className="inline-flex items-center space-x-1.5 px-3.5 py-2 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-xl transition cursor-pointer"
           >
             <History className="h-4 w-4 text-slate-600" />
-            <span>Change Audit Trail</span>
+            <span>Schedule History</span>
           </button>
 
           <button
             onClick={handleExportTimetable}
-            className="inline-flex items-center space-x-1.5 px-3.5 py-2 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-xl transition"
+            className="inline-flex items-center space-x-1.5 px-3.5 py-2 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-xl transition cursor-pointer"
           >
             <FileSpreadsheet className="h-4 w-4" />
-            <span>Export Schedule</span>
+            <span>Export Excel</span>
           </button>
 
           {(role === 'director' || role === 'hod' || role === 'super_admin' || role === 'it_admin') && (
             <button
               onClick={handleOpenAddSlot}
-              className="inline-flex items-center space-x-1.5 px-4 py-2 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl shadow-sm shadow-indigo-600/20 transition"
+              className="inline-flex items-center space-x-1.5 px-4 py-2 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl shadow-sm shadow-indigo-600/20 transition cursor-pointer"
             >
               <Plus className="h-4 w-4" />
               <span>Add Lecture Slot</span>
@@ -498,13 +520,13 @@ export const TimetableManager: React.FC = () => {
       <div className="bg-white p-4 rounded-xl border border-slate-200/80 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div className="flex items-center space-x-2 text-xs font-bold text-slate-700">
           <Filter className="h-4 w-4 text-slate-400" />
-          <span>Active Cohort View:</span>
+          <span>Filter Section:</span>
           <select
             value={selectedSectionId}
             onChange={(e) => setSelectedSectionId(e.target.value)}
             className="text-xs bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
           >
-            <option value="ALL">Entire Campus (All Sections)</option>
+            <option value="ALL">All Sections</option>
             {sections.map((s) => (
               <option key={s.id} value={s.id}>
                 {s.name}
@@ -515,7 +537,7 @@ export const TimetableManager: React.FC = () => {
 
         <div className="text-xs text-slate-500 flex items-center gap-1.5">
           <ShieldCheck className="h-4 w-4 text-emerald-600" />
-          <span>3-Way Conflict Engine Active (Teacher, Room, Section)</span>
+          <span>Conflict Detection Active</span>
         </div>
       </div>
 

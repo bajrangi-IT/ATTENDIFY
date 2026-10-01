@@ -332,9 +332,10 @@ export const Navbar: React.FC<NavbarProps> = ({
                         onClick={async () => {
                           await switchInstitution(inst.id);
                           setIsSchoolMenuOpen(false);
+                          const displayCode = inst.code === 'SOET' ? 'SET' : inst.code;
                           addToast({
                             title: 'Campus Context Switched',
-                            message: `Now viewing ${inst.name} (${inst.code})`,
+                            message: `Now viewing ${inst.name} (${displayCode})`,
                             type: 'info'
                           });
                         }}
@@ -344,7 +345,9 @@ export const Navbar: React.FC<NavbarProps> = ({
                       >
                         <div className="truncate pr-2">
                           <div className="truncate font-semibold">{inst.name}</div>
-                          <div className="text-[10px] text-slate-400 font-mono">{inst.code} • {inst.address ? inst.address.slice(0, 30) + '...' : 'Main Campus'}</div>
+                          <div className="text-[10px] text-slate-400 font-mono">
+                            {inst.code === 'SOET' ? 'SET' : inst.code} • {inst.address ? inst.address.slice(0, 30) + '...' : 'Main Campus'}
+                          </div>
                         </div>
                         {isSelected && <Check className="h-4 w-4 text-indigo-600 shrink-0" />}
                       </button>

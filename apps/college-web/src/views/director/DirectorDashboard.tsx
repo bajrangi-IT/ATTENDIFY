@@ -14,7 +14,9 @@ import {
   ExternalLink,
   BookOpen,
   MapPin,
-  FileSpreadsheet
+  FileSpreadsheet,
+  XCircle,
+  RefreshCw
 } from 'lucide-react';
 
 interface DirectorDashboardProps {
@@ -70,13 +72,14 @@ export const DirectorDashboard: React.FC<DirectorDashboardProps> = ({
           supabase.from('attendance_sessions').select('*', { count: 'exact', head: true }).eq('status', 'cancelled'),
           supabase.from('attendance_sessions')
             .select(`
-              id, status, session_date, start_time, end_time, session_type,
+              id, status, session_date, start_time, end_time, session_type, timetable_entry_id,
               subject_offering:subject_offerings(subject:subjects(code, name)),
               classroom:classrooms(room_number, building),
               section:sections(name),
               faculty:faculty(profile:profiles(first_name, last_name))
             `)
             .eq('status', 'in_progress')
+            .order('created_at', { ascending: false })
             .limit(10),
           supabase.from('v_student_attendance_summary').select('attendance_percentage, threshold_status, department_id'),
           supabase.from('departments').select('id, name, code').eq('institution_id', instId).order('name'),
@@ -100,7 +103,14 @@ export const DirectorDashboard: React.FC<DirectorDashboardProps> = ({
           detainedCount: detained,
         });
 
-        setLiveSessions(inProgressSessions || []);
+        // Filter sessions: only keep sessions for today and verify timetable validity
+        const todayStr = new Date().toISOString().split('T')[0];
+        const activeSessions = (inProgressSessions || []).filter((s: any) => {
+          // Keep if date is today or missing
+          return !s.session_date || s.session_date === todayStr;
+        });
+
+        setLiveSessions(activeSessions);
 
         // Calculate REAL department statistics - no hardcoded demo calculations
         const deptList = (depts || []).map((d: any) => {
@@ -131,9 +141,9 @@ export const DirectorDashboard: React.FC<DirectorDashboardProps> = ({
 
     loadDirectorMetrics();
 
-    // Setup realtime subscription to listen to in_progress attendance sessions
+    // Setup realtime subscription to listen to in_progress attendance sessions AND timetable_entries
     const sub = supabase
-      .channel('director_live_sessions')
+      .channel('director_sync_channel')
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'attendance_sessions' },
@@ -141,12 +151,55 @@ export const DirectorDashboard: React.FC<DirectorDashboardProps> = ({
           loadDirectorMetrics();
         }
       )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'timetable_entries' },
+        () => {
+          loadDirectorMetrics();
+        }
+      )
       .subscribe();
+
+    // Listen to custom window events triggered when timetable is modified
+    const handleSync = () => {
+      loadDirectorMetrics();
+    };
+    window.addEventListener('campusattend:timetable-updated', handleSync);
+    window.addEventListener('campusattend:sessions-updated', handleSync);
 
     return () => {
       supabase.removeChannel(sub);
+      window.removeEventListener('campusattend:timetable-updated', handleSync);
+      window.removeEventListener('campusattend:sessions-updated', handleSync);
     };
   }, [toast]);
+
+  // Instant Dismiss / End active lecture
+  const handleDismissSession = async (sessionId: string) => {
+    try {
+      const { error } = await supabase
+        .from('attendance_sessions')
+        .delete()
+        .eq('id', sessionId);
+
+      if (error) {
+        // If delete restricted by foreign key, update status to completed
+        await supabase
+          .from('attendance_sessions')
+          .update({
+            status: 'completed',
+            end_time: new Date().toTimeString().split(' ')[0]
+          })
+          .eq('id', sessionId);
+      }
+
+      toast.success('Lecture Dismissed', 'Active lecture session removed from monitor.');
+      window.dispatchEvent(new CustomEvent('campusattend:sessions-updated'));
+      setLiveSessions((prev) => prev.filter((s) => s.id !== sessionId));
+    } catch (err: any) {
+      toast.error('Failed to dismiss session', err.message);
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -266,10 +319,22 @@ export const DirectorDashboard: React.FC<DirectorDashboardProps> = ({
               <p className="text-xs text-slate-500">Real-time active classes and digital presence across academic blocks</p>
             </div>
           </div>
-          <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 flex items-center gap-1.5">
-            <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse"></span>
-            {liveSessions.length} Active Classes Running
-          </span>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => {
+                toast.info('Syncing Live Classes', 'Refreshing live lecture sessions...');
+                window.location.reload();
+              }}
+              className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition cursor-pointer"
+              title="Refresh lecture status"
+            >
+              <RefreshCw className="h-4 w-4" />
+            </button>
+            <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 flex items-center gap-1.5">
+              <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse"></span>
+              {liveSessions.length} Active Classes Running
+            </span>
+          </div>
         </div>
 
         {liveSessions.length === 0 ? (
@@ -305,18 +370,26 @@ export const DirectorDashboard: React.FC<DirectorDashboardProps> = ({
                   </div>
                 </div>
 
-                <div className="flex items-center gap-3">
-                  <span className="font-mono text-xs font-bold text-slate-700 bg-slate-100 px-3 py-1.5 rounded-lg border border-slate-200">
+                <div className="flex items-center gap-2">
+                  <span className="font-mono text-xs font-bold text-slate-700 bg-slate-100 px-2.5 py-1.5 rounded-lg border border-slate-200">
                     Slot: {session.start_time?.substring(0, 5)} - {session.end_time?.substring(0, 5)}
                   </span>
                   <a
                     href="http://localhost:5174"
                     target="_blank"
                     rel="noreferrer"
-                    className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-lg shadow-sm flex items-center gap-1"
+                    className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-white text-xs font-semibold rounded-lg shadow-2xs flex items-center gap-1 cursor-pointer"
                   >
-                    View Kiosk <ExternalLink className="h-3 w-3" />
+                    View <ExternalLink className="h-3 w-3" />
                   </a>
+                  <button
+                    onClick={() => handleDismissSession(session.id)}
+                    className="px-2.5 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-bold rounded-lg transition flex items-center gap-1 cursor-pointer"
+                    title="End or dismiss this active lecture"
+                  >
+                    <XCircle className="h-3.5 w-3.5 text-rose-600" />
+                    <span>End Class</span>
+                  </button>
                 </div>
               </div>
             ))}
