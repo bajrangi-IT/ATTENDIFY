@@ -17,7 +17,8 @@ import {
   Building,
   GraduationCap,
   AlertCircle,
-  ArrowLeft
+  ArrowLeft,
+  QrCode
 } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
 
@@ -913,8 +914,8 @@ export const SmartDisplayView: React.FC<SmartDisplayViewProps> = ({ onBack }) =>
                 </>
               ) : (
                 <>
-                  <Sparkles className="w-3.5 h-3.5" />
-                  <span>🚀 Project Live Attendance QR Code ({roomNumber})</span>
+                  <QrCode className="w-3.5 h-3.5" />
+                  <span>Generate Classroom Attendance QR Code ({roomNumber})</span>
                 </>
               )}
             </button>
@@ -927,11 +928,11 @@ export const SmartDisplayView: React.FC<SmartDisplayViewProps> = ({ onBack }) =>
         <div className="flex items-center gap-3">
           <span className="flex items-center gap-1.5">
             <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-            Zero-Trust Device Guard Active
+            Classroom Terminal Security Active
           </span>
         </div>
         <div className="font-mono text-slate-400 text-[11px]">
-          CampusAttend OS • Classroom Node
+          SDGI Global University • Classroom Terminal
         </div>
       </footer>
     </div>

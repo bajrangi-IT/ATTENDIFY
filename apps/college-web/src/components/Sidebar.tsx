@@ -167,15 +167,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </div>
       </div>
 
-      {/* Security & System Info Footer */}
+      {/* Institutional Campus Status Footer */}
       <div className="p-4 border-t border-slate-800 text-xs">
         <div className="bg-slate-800/80 rounded-xl p-3 border border-slate-700/60">
-          <div className="flex items-center space-x-2 text-emerald-400 font-semibold mb-1">
-            <Shield className="h-4 w-4" />
-            <span className="text-[11px]">Anti-Proxy Dynamic QR</span>
+          <div className="flex items-center space-x-2 text-indigo-400 font-semibold mb-1">
+            <Building2 className="h-4 w-4" />
+            <span className="text-[11px]">Academic ERP Unified Network</span>
           </div>
           <p className="text-[11px] text-slate-400 leading-relaxed">
-            15-second rotating cryptographic HMAC token with timestamp drift protection.
+            Multi-Campus Federated Attendance & Statutory Compliance System.
           </p>
         </div>
       </div>

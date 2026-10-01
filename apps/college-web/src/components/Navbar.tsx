@@ -18,7 +18,9 @@ import {
   Clock,
   Sparkles,
   ArrowLeft,
-  Menu
+  Menu,
+  PlusCircle,
+  Check
 } from 'lucide-react';
 
 interface NavbarProps {
@@ -36,7 +38,18 @@ export const Navbar: React.FC<NavbarProps> = ({
   onBackToLogin,
   onToggleMobileMenu
 }) => {
-  const { profile, role, institution, resetPassword, updateProfile, signOut } = useAuth();
+  const {
+    profile,
+    role,
+    institution,
+    resetPassword,
+    updateProfile,
+    signOut,
+    institutionsList,
+    switchInstitution,
+    currentInstitutionId,
+    registerSchoolAndDirector
+  } = useAuth();
   const { addToast } = useToast();
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -44,6 +57,19 @@ export const Navbar: React.FC<NavbarProps> = ({
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
   const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
   const [isEditProfileModalOpen, setIsEditProfileModalOpen] = useState(false);
+  const [isSchoolMenuOpen, setIsSchoolMenuOpen] = useState(false);
+  const [isRegisterSchoolModalOpen, setIsRegisterSchoolModalOpen] = useState(false);
+
+  // New School Modal state
+  const [modalSchoolName, setModalSchoolName] = useState('');
+  const [modalSchoolCode, setModalSchoolCode] = useState('');
+  const [modalCampusAddress, setModalCampusAddress] = useState('SDGI Global University Campus');
+  const [modalDepartments, setModalDepartments] = useState('Computer Science, Management, Applied Sciences');
+  const [modalDirectorFirst, setModalDirectorFirst] = useState('');
+  const [modalDirectorLast, setModalDirectorLast] = useState('');
+  const [modalDirectorEmail, setModalDirectorEmail] = useState('');
+  const [modalDirectorPhone, setModalDirectorPhone] = useState('');
+  const [isSavingSchool, setIsSavingSchool] = useState(false);
 
   // Password reset form
   const [resetEmail, setResetEmail] = useState('');
@@ -189,6 +215,67 @@ export const Navbar: React.FC<NavbarProps> = ({
     }
   };
 
+  const handleModalRegisterSchool = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!modalSchoolName.trim() || !modalSchoolCode.trim()) {
+      addToast({
+        title: 'Missing Required Fields',
+        message: 'School Name and Campus Code are required.',
+        type: 'warning'
+      });
+      return;
+    }
+    if (!modalDirectorFirst.trim() || !modalDirectorEmail.trim()) {
+      addToast({
+        title: 'Missing Director Information',
+        message: 'Director name and institutional email are required.',
+        type: 'warning'
+      });
+      return;
+    }
+
+    setIsSavingSchool(true);
+    try {
+      const depts = modalDepartments.split(',').map((d) => d.trim()).filter(Boolean);
+      const res = await registerSchoolAndDirector(
+        {
+          name: modalSchoolName.trim(),
+          code: modalSchoolCode.trim().toUpperCase(),
+          address: modalCampusAddress.trim(),
+          departments: depts
+        },
+        {
+          firstName: modalDirectorFirst.trim(),
+          lastName: modalDirectorLast.trim(),
+          email: modalDirectorEmail.trim(),
+          phone: modalDirectorPhone.trim(),
+          employeeCode: `DIR-${modalSchoolCode.trim().toUpperCase()}-01`,
+          password: 'CampusPass2026!'
+        }
+      );
+
+      if (!res.success) {
+        addToast({ title: 'Registration Failed', message: res.error || 'Failed to register school.', type: 'error' });
+      } else {
+        addToast({
+          title: 'Campus Registered Successfully',
+          message: `${modalSchoolName} registered and active in ERP system.`,
+          type: 'success'
+        });
+        setIsRegisterSchoolModalOpen(false);
+        // Clear form
+        setModalSchoolName('');
+        setModalSchoolCode('');
+        setModalDirectorFirst('');
+        setModalDirectorLast('');
+        setModalDirectorEmail('');
+        setModalDirectorPhone('');
+      }
+    } finally {
+      setIsSavingSchool(false);
+    }
+  };
+
   return (
     <header className="h-16 bg-white border-b border-slate-200 px-3 sm:px-6 flex items-center justify-between sticky top-0 z-30 shadow-xs">
       {/* Brand & Campus Identity */}
@@ -213,10 +300,73 @@ export const Navbar: React.FC<NavbarProps> = ({
               ERP
             </span>
           </div>
-          <p className="text-[11px] text-slate-500 font-medium hidden sm:flex items-center gap-1">
-            <Building2 className="h-3 w-3 text-slate-400 shrink-0" />
-            <span className="truncate max-w-[260px]">{institution?.name || 'School of Engineering & Technology'}</span>
-          </p>
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setIsSchoolMenuOpen(!isSchoolMenuOpen)}
+              className="text-[11px] text-slate-600 hover:text-indigo-600 font-medium hidden sm:flex items-center gap-1.5 transition cursor-pointer hover:bg-slate-100 px-1.5 py-0.5 rounded-lg -ml-1"
+              title="Click to switch School / Campus or register a new campus"
+            >
+              <Building2 className="h-3.5 w-3.5 text-indigo-600 shrink-0" />
+              <span className="truncate max-w-[240px] font-semibold text-slate-800">
+                {institution?.name || 'School of Engineering & Technology'}
+              </span>
+              <ChevronDown className={`h-3 w-3 text-slate-400 transition-transform ${isSchoolMenuOpen ? 'rotate-180' : ''}`} />
+            </button>
+
+            {isSchoolMenuOpen && (
+              <div className="absolute left-0 mt-2 w-80 bg-white rounded-2xl border border-slate-200 shadow-2xl p-2 z-50 animate-in fade-in slide-in-from-top-1 text-xs">
+                <div className="px-3 py-2 border-b border-slate-100 flex items-center justify-between">
+                  <span className="font-bold text-slate-800 text-[11px] uppercase tracking-wider">
+                    Campuses & Schools ({institutionsList.length})
+                  </span>
+                  <span className="text-[10px] text-indigo-600 font-semibold">Active Scope</span>
+                </div>
+                <div className="max-h-56 overflow-y-auto py-1 space-y-0.5">
+                  {institutionsList.map((inst) => {
+                    const isSelected = inst.id === (institution?.id || currentInstitutionId);
+                    return (
+                      <button
+                        key={inst.id}
+                        type="button"
+                        onClick={async () => {
+                          await switchInstitution(inst.id);
+                          setIsSchoolMenuOpen(false);
+                          addToast({
+                            title: 'Campus Context Switched',
+                            message: `Now viewing ${inst.name} (${inst.code})`,
+                            type: 'info'
+                          });
+                        }}
+                        className={`w-full text-left px-3 py-2 rounded-xl flex items-center justify-between transition cursor-pointer ${
+                          isSelected ? 'bg-indigo-50/80 text-indigo-950 font-bold' : 'hover:bg-slate-50 text-slate-700'
+                        }`}
+                      >
+                        <div className="truncate pr-2">
+                          <div className="truncate font-semibold">{inst.name}</div>
+                          <div className="text-[10px] text-slate-400 font-mono">{inst.code} • {inst.address ? inst.address.slice(0, 30) + '...' : 'Main Campus'}</div>
+                        </div>
+                        {isSelected && <Check className="h-4 w-4 text-indigo-600 shrink-0" />}
+                      </button>
+                    );
+                  })}
+                </div>
+                <div className="p-1 pt-1.5 border-t border-slate-100">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsSchoolMenuOpen(false);
+                      setIsRegisterSchoolModalOpen(true);
+                    }}
+                    className="w-full py-2 px-3 rounded-xl bg-purple-50 hover:bg-purple-100 text-purple-700 font-bold text-xs flex items-center justify-center gap-1.5 transition cursor-pointer"
+                  >
+                    <PlusCircle className="h-3.5 w-3.5" />
+                    <span>+ Register New School / Campus</span>
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -510,6 +660,139 @@ export const Navbar: React.FC<NavbarProps> = ({
                 className="px-4 py-2 text-white bg-indigo-600 hover:bg-indigo-700 font-bold rounded-xl shadow-xs transition"
               >
                 {isSavingProfile ? 'Saving...' : 'Save Changes'}
+              </button>
+            </div>
+          </form>
+        </Modal>
+      )}
+
+      {/* Register New School & Campus Modal */}
+      {isRegisterSchoolModalOpen && (
+        <Modal
+          isOpen={isRegisterSchoolModalOpen}
+          onClose={() => setIsRegisterSchoolModalOpen(false)}
+          title="Register New School / Campus & Director"
+        >
+          <form onSubmit={handleModalRegisterSchool} className="space-y-4 text-xs">
+            <p className="text-slate-500 text-[11px]">
+              Onboard a new School or Campus under SDGI Global University and establish its Director workspace.
+            </p>
+
+            <div className="p-3 bg-indigo-50/50 rounded-xl border border-indigo-100 space-y-3">
+              <span className="font-bold text-indigo-900 block text-xs">School Details</span>
+              <div>
+                <label className="block text-slate-700 font-semibold mb-1">School / Institute Name *</label>
+                <input
+                  type="text"
+                  required
+                  value={modalSchoolName}
+                  onChange={(e) => setModalSchoolName(e.target.value)}
+                  placeholder="e.g. School of Artificial Intelligence & Robotics"
+                  className="w-full p-2.5 bg-white border border-slate-200 rounded-xl text-xs"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-slate-700 font-semibold mb-1">Campus Code *</label>
+                  <input
+                    type="text"
+                    required
+                    value={modalSchoolCode}
+                    onChange={(e) => setModalSchoolCode(e.target.value.toUpperCase())}
+                    placeholder="e.g. SAIR"
+                    className="w-full p-2.5 bg-white border border-slate-200 rounded-xl text-xs font-mono uppercase"
+                  />
+                </div>
+                <div>
+                  <label className="block text-slate-700 font-semibold mb-1">Campus Location</label>
+                  <input
+                    type="text"
+                    value={modalCampusAddress}
+                    onChange={(e) => setModalCampusAddress(e.target.value)}
+                    placeholder="e.g. Technology Block, Delhi-NCR"
+                    className="w-full p-2.5 bg-white border border-slate-200 rounded-xl text-xs"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-slate-700 font-semibold mb-1">Initial Departments (Comma-separated)</label>
+                <input
+                  type="text"
+                  value={modalDepartments}
+                  onChange={(e) => setModalDepartments(e.target.value)}
+                  placeholder="e.g. Computer Science, AI & Machine Learning, Data Science"
+                  className="w-full p-2.5 bg-white border border-slate-200 rounded-xl text-xs"
+                />
+              </div>
+            </div>
+
+            <div className="p-3 bg-purple-50/50 rounded-xl border border-purple-100 space-y-3">
+              <span className="font-bold text-purple-900 block text-xs">Director & Dean Credentials</span>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-slate-700 font-semibold mb-1">First Name *</label>
+                  <input
+                    type="text"
+                    required
+                    value={modalDirectorFirst}
+                    onChange={(e) => setModalDirectorFirst(e.target.value)}
+                    placeholder="Dr. Rajesh"
+                    className="w-full p-2.5 bg-white border border-slate-200 rounded-xl text-xs"
+                  />
+                </div>
+                <div>
+                  <label className="block text-slate-700 font-semibold mb-1">Last Name</label>
+                  <input
+                    type="text"
+                    value={modalDirectorLast}
+                    onChange={(e) => setModalDirectorLast(e.target.value)}
+                    placeholder="Sharma"
+                    className="w-full p-2.5 bg-white border border-slate-200 rounded-xl text-xs"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-slate-700 font-semibold mb-1">Official Academic Email *</label>
+                  <input
+                    type="email"
+                    required
+                    value={modalDirectorEmail}
+                    onChange={(e) => setModalDirectorEmail(e.target.value)}
+                    placeholder="director.sair@sdgi.edu.in"
+                    className="w-full p-2.5 bg-white border border-slate-200 rounded-xl text-xs"
+                  />
+                </div>
+                <div>
+                  <label className="block text-slate-700 font-semibold mb-1">Contact Phone</label>
+                  <input
+                    type="tel"
+                    value={modalDirectorPhone}
+                    onChange={(e) => setModalDirectorPhone(e.target.value)}
+                    placeholder="+91 98765 43210"
+                    className="w-full p-2.5 bg-white border border-slate-200 rounded-xl text-xs"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-end space-x-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setIsRegisterSchoolModalOpen(false)}
+                className="px-4 py-2 text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl font-medium"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={isSavingSchool}
+                className="px-4 py-2 text-white bg-purple-600 hover:bg-purple-700 font-bold rounded-xl shadow-xs transition"
+              >
+                {isSavingSchool ? 'Registering School...' : 'Register School & Campus'}
               </button>
             </div>
           </form>

@@ -13,17 +13,22 @@ import {
   Radio,
   ExternalLink,
   BookOpen,
-  MapPin
+  MapPin,
+  FileSpreadsheet
 } from 'lucide-react';
 
 interface DirectorDashboardProps {
   onNavigateToReports?: () => void;
   onNavigateToStudents?: () => void;
+  onNavigateToBulkImport?: () => void;
+  onNavigateToAcademicSetup?: () => void;
 }
 
 export const DirectorDashboard: React.FC<DirectorDashboardProps> = ({
   onNavigateToReports,
   onNavigateToStudents,
+  onNavigateToBulkImport,
+  onNavigateToAcademicSetup,
 }) => {
   const toast = useToast();
   const { profile, institution, currentInstitutionId } = useAuth();
@@ -162,6 +167,27 @@ export const DirectorDashboard: React.FC<DirectorDashboardProps> = ({
           <p className="text-xs text-slate-500 font-medium mt-1">
             Real-time cross-departmental analytics and live lecture attendance monitor.
           </p>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2 self-start md:self-auto">
+          {onNavigateToBulkImport && (
+            <button
+              onClick={onNavigateToBulkImport}
+              className="px-3.5 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-bold rounded-xl border border-indigo-200 transition flex items-center gap-1.5 cursor-pointer shadow-2xs"
+            >
+              <FileSpreadsheet className="w-3.5 h-3.5" />
+              <span>Bulk Data Intake (1000+)</span>
+            </button>
+          )}
+          {onNavigateToAcademicSetup && (
+            <button
+              onClick={onNavigateToAcademicSetup}
+              className="px-3.5 py-2 bg-purple-50 hover:bg-purple-100 text-purple-700 text-xs font-bold rounded-xl border border-purple-200 transition flex items-center gap-1.5 cursor-pointer shadow-2xs"
+            >
+              <Building2 className="w-3.5 h-3.5" />
+              <span>Campus & Schools</span>
+            </button>
+          )}
         </div>
       </div>
 

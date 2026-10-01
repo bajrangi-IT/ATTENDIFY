@@ -174,6 +174,8 @@ const MainAppContent: React.FC = () => {
             <DirectorDashboard
               onNavigateToReports={() => setActiveTab('director-approvals')}
               onNavigateToStudents={() => setActiveTab('student-directory')}
+              onNavigateToBulkImport={() => setActiveTab('bulk-import')}
+              onNavigateToAcademicSetup={() => setActiveTab('academic-setup')}
             />
           )}
           {activeTab === 'institutional-reports' && <InstitutionalReportsView />}

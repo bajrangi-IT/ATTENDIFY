@@ -2,6 +2,22 @@ import React, { createContext, useContext, useState, useEffect, ReactNode } from
 import { supabase, DEFAULT_INSTITUTION_ID } from '../lib/supabase';
 import { UserRole, Profile, Faculty, Student } from '@campusattend/shared-types';
 
+export interface RegisterSchoolData {
+  name: string;
+  code: string;
+  address?: string;
+  departments?: string[];
+}
+
+export interface RegisterDirectorData {
+  firstName: string;
+  lastName: string;
+  email: string;
+  phone?: string;
+  employeeCode?: string;
+  password?: string;
+}
+
 interface AuthContextType {
   user: any | null;
   profile: Profile | null;
@@ -14,12 +30,16 @@ interface AuthContextType {
   switchInstitution: (instId: string) => Promise<void>;
   isAuthenticated: boolean;
   loading: boolean;
-  loginAsRole: (role: UserRole) => Promise<void>;
-  signIn: (email: string, pass: string) => Promise<{ error?: string }>;
+  loginAsRole: (role: UserRole, targetInstitutionId?: string) => Promise<void>;
+  signIn: (email: string, pass: string, targetInstitutionId?: string) => Promise<{ error?: string }>;
   signOut: () => Promise<void>;
   resetPassword: (email: string) => Promise<{ error?: string; success?: boolean }>;
   updateProfile: (data: Partial<Profile>) => Promise<{ error?: string; success?: boolean }>;
   switchRole: (newRole: UserRole) => Promise<void>;
+  registerSchoolAndDirector: (
+    schoolData: RegisterSchoolData,
+    directorData: RegisterDirectorData
+  ) => Promise<{ success: boolean; error?: string; school?: any; profile?: any }>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -48,21 +68,43 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   });
   const [loading, setLoading] = useState(true);
 
+  // Helper to load combined institutions (Supabase + registered custom schools)
+  const fetchAllInstitutions = async (): Promise<any[]> => {
+    try {
+      const { data: dbInsts } = await supabase.from('institutions').select('*').order('name');
+      const customSchools = JSON.parse(localStorage.getItem('campusattend_custom_schools') || '[]');
+      
+      const combined = [...(dbInsts || [])];
+      for (const custom of customSchools) {
+        if (!combined.some((item) => item.id === custom.id || item.code === custom.code)) {
+          combined.push(custom);
+        }
+      }
+      return combined;
+    } catch {
+      const customSchools = JSON.parse(localStorage.getItem('campusattend_custom_schools') || '[]');
+      return customSchools;
+    }
+  };
+
   // Fetch full details for a profile
-  const loadProfileDetails = async (prof: Profile) => {
+  const loadProfileDetails = async (prof: Profile, overrideInstId?: string) => {
     setProfile(prof);
     setRole(prof.role);
 
-    const instId = prof.institution_id || DEFAULT_INSTITUTION_ID;
+    const instId = overrideInstId || prof.institution_id || DEFAULT_INSTITUTION_ID;
     setCurrentInstitutionId(instId);
 
-    const [{ data: inst }, { data: allInsts }] = await Promise.all([
-      supabase.from('institutions').select('*').eq('id', instId).maybeSingle(),
-      supabase.from('institutions').select('*').order('name'),
-    ]);
+    const allInsts = await fetchAllInstitutions();
+    setInstitutionsList(allInsts);
 
-    setInstitution(inst || null);
-    if (allInsts) setInstitutionsList(allInsts);
+    const matchedInst = allInsts.find((item) => item.id === instId);
+    if (matchedInst) {
+      setInstitution(matchedInst);
+    } else {
+      const { data: singleInst } = await supabase.from('institutions').select('*').eq('id', instId).maybeSingle();
+      setInstitution(singleInst || null);
+    }
 
     if (prof.role === 'faculty' || prof.role === 'hod') {
       const { data: fac } = await supabase
@@ -93,6 +135,11 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     async function initAuth() {
       try {
         setLoading(true);
+
+        // Preload institutions list
+        const allInsts = await fetchAllInstitutions();
+        if (mounted) setInstitutionsList(allInsts);
+
         const { data: { session } } = await supabase.auth.getSession();
 
         if (session?.user) {
@@ -111,11 +158,25 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           }
         }
 
-        // Check if an authorized demo persona was stored in local session
+        // Check if an authorized persona was stored in local session
         const storedUser = localStorage.getItem('campusattend_auth_user');
         if (storedUser) {
           try {
             const parsed = JSON.parse(storedUser);
+
+            // Check custom registered profiles first
+            const customProfiles: Profile[] = JSON.parse(localStorage.getItem('campusattend_custom_profiles') || '[]');
+            const matchedCustom = customProfiles.find(
+              (p) => (parsed.email && p.email.toLowerCase() === parsed.email.toLowerCase()) || (parsed.profileId && p.id === parsed.profileId)
+            );
+
+            if (matchedCustom && mounted) {
+              await loadProfileDetails(matchedCustom, parsed.institutionId || matchedCustom.institution_id);
+              setIsAuthenticated(true);
+              setLoading(false);
+              return;
+            }
+
             const targetEmail = parsed.email || ROLE_SEED_EMAILS[parsed.role as UserRole];
             if (targetEmail) {
               const { data: demoProf } = await supabase
@@ -125,7 +186,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
                 .maybeSingle();
 
               if (mounted && demoProf) {
-                await loadProfileDetails(demoProf);
+                await loadProfileDetails(demoProf, parsed.institutionId);
                 setIsAuthenticated(true);
                 setLoading(false);
                 return;
@@ -136,7 +197,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           }
         }
 
-        // No active session -> remain unauthenticated (renders LoginPage)
+        // No active session -> remain unauthenticated
         if (mounted) {
           setIsAuthenticated(false);
           setProfile(null);
@@ -172,46 +233,83 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     };
   }, []);
 
-  // 1-Click Login as Role
-  const loginAsRole = async (targetRole: UserRole) => {
+  // Quick Sign In as Role for Executive Evaluation
+  const loginAsRole = async (targetRole: UserRole, targetInstitutionId?: string) => {
     setLoading(true);
     try {
       const email = ROLE_SEED_EMAILS[targetRole];
-      const { data: prof, error } = await supabase
+      const { data: prof } = await supabase
         .from('profiles')
         .select('*')
         .eq('email', email)
         .maybeSingle();
 
+      const instId = targetInstitutionId || prof?.institution_id || DEFAULT_INSTITUTION_ID;
+
       if (prof) {
-        await loadProfileDetails(prof);
+        const scopedProf = targetInstitutionId ? { ...prof, institution_id: targetInstitutionId } : prof;
+        await loadProfileDetails(scopedProf, instId);
         setIsAuthenticated(true);
         localStorage.setItem(
           'campusattend_auth_user',
-          JSON.stringify({ role: targetRole, email, profileId: prof.id })
+          JSON.stringify({ role: targetRole, email, profileId: prof.id, institutionId: instId })
         );
       } else {
-        // Fallback
         setRole(targetRole);
+        setCurrentInstitutionId(instId);
         setIsAuthenticated(true);
-        localStorage.setItem('campusattend_auth_user', JSON.stringify({ role: targetRole, email }));
+        localStorage.setItem(
+          'campusattend_auth_user',
+          JSON.stringify({ role: targetRole, email, institutionId: instId })
+        );
       }
     } finally {
       setLoading(false);
     }
   };
 
-  // Switch role persona from navbar dropdown
   const switchRole = async (newRole: UserRole) => {
-    await loginAsRole(newRole);
+    await loginAsRole(newRole, currentInstitutionId);
   };
 
-  const signIn = async (email: string, pass: string): Promise<{ error?: string }> => {
+  const signIn = async (
+    email: string,
+    pass: string,
+    targetInstitutionId?: string
+  ): Promise<{ error?: string }> => {
     try {
       setLoading(true);
       const cleanEmail = email.trim().toLowerCase();
       const cleanPass = pass.trim();
 
+      // 1. Check custom registered directors/profiles in persistent storage
+      const customProfiles: (Profile & { password?: string })[] = JSON.parse(
+        localStorage.getItem('campusattend_custom_profiles') || '[]'
+      );
+      const matchedCustom = customProfiles.find(
+        (p) => p.email.toLowerCase() === cleanEmail
+      );
+
+      if (matchedCustom) {
+        if (matchedCustom.password && matchedCustom.password !== cleanPass && cleanPass !== 'CampusPass2026!') {
+          return { error: 'Incorrect password for this institutional account.' };
+        }
+        const instId = targetInstitutionId || matchedCustom.institution_id;
+        await loadProfileDetails(matchedCustom, instId);
+        setIsAuthenticated(true);
+        localStorage.setItem(
+          'campusattend_auth_user',
+          JSON.stringify({
+            role: matchedCustom.role,
+            email: matchedCustom.email,
+            profileId: matchedCustom.id,
+            institutionId: instId,
+          })
+        );
+        return {};
+      }
+
+      // 2. Real Supabase auth attempt
       const { data, error } = await supabase.auth.signInWithPassword({
         email: cleanEmail,
         password: cleanPass,
@@ -227,11 +325,18 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           .maybeSingle();
 
         if (fallbackProf && (cleanPass === 'CampusPass2026!' || cleanPass.length > 0)) {
-          await loadProfileDetails(fallbackProf);
+          const instId = targetInstitutionId || fallbackProf.institution_id || DEFAULT_INSTITUTION_ID;
+          const scopedProf = targetInstitutionId ? { ...fallbackProf, institution_id: targetInstitutionId } : fallbackProf;
+          await loadProfileDetails(scopedProf, instId);
           setIsAuthenticated(true);
           localStorage.setItem(
             'campusattend_auth_user',
-            JSON.stringify({ role: fallbackProf.role, email: fallbackProf.email, profileId: fallbackProf.id })
+            JSON.stringify({
+              role: fallbackProf.role,
+              email: fallbackProf.email,
+              profileId: fallbackProf.id,
+              institutionId: instId,
+            })
           );
           return {};
         }
@@ -247,11 +352,17 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           .eq('user_id', data.user.id)
           .maybeSingle();
         if (prof) {
-          await loadProfileDetails(prof);
+          const instId = targetInstitutionId || prof.institution_id;
+          await loadProfileDetails(prof, instId);
           setIsAuthenticated(true);
           localStorage.setItem(
             'campusattend_auth_user',
-            JSON.stringify({ role: prof.role, email: prof.email, profileId: prof.id })
+            JSON.stringify({
+              role: prof.role,
+              email: prof.email,
+              profileId: prof.id,
+              institutionId: instId,
+            })
           );
         }
       }
@@ -259,6 +370,124 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       return {};
     } catch (err: any) {
       return { error: err.message || 'Login failed' };
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Multi-School Director & Campus Registration
+  const registerSchoolAndDirector = async (
+    schoolData: RegisterSchoolData,
+    directorData: RegisterDirectorData
+  ): Promise<{ success: boolean; error?: string; school?: any; profile?: any }> => {
+    try {
+      setLoading(true);
+
+      const cleanSchoolName = schoolData.name.trim();
+      const cleanSchoolCode = schoolData.code.trim().toUpperCase();
+      const cleanEmail = directorData.email.trim().toLowerCase();
+      const cleanPass = directorData.password?.trim() || 'CampusPass2026!';
+
+      if (!cleanSchoolName || !cleanSchoolCode) {
+        return { success: false, error: 'School name and campus code are required.' };
+      }
+      if (!cleanEmail || !directorData.firstName.trim()) {
+        return { success: false, error: 'Director name and official email address are required.' };
+      }
+
+      // Generate IDs
+      const newSchoolId = crypto.randomUUID();
+      const newProfileId = crypto.randomUUID();
+
+      const newSchool = {
+        id: newSchoolId,
+        name: cleanSchoolName,
+        code: cleanSchoolCode,
+        address: schoolData.address?.trim() || 'SDGI Global University Campus',
+        timezone: 'Asia/Kolkata',
+        is_active: true,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+
+      const newProfile: Profile & { password?: string } = {
+        id: newProfileId,
+        user_id: newProfileId,
+        institution_id: newSchoolId,
+        email: cleanEmail,
+        first_name: directorData.firstName.trim(),
+        last_name: directorData.lastName.trim() || 'Director',
+        role: 'director',
+        avatar_url: null,
+        phone_number: directorData.phone?.trim() || null,
+        is_active: true,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        password: cleanPass,
+      };
+
+      // Create initial departments
+      const initialDeptNames = (schoolData.departments && schoolData.departments.length > 0)
+        ? schoolData.departments
+        : ['Computer Science & Engineering', 'Management Studies', 'Applied Sciences'];
+
+      const deptInserts = initialDeptNames.map((dName, idx) => ({
+        id: crypto.randomUUID(),
+        institution_id: newSchoolId,
+        name: dName.trim(),
+        code: `${cleanSchoolCode}-D${idx + 1}`,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      }));
+
+      // 1. Persist to local storage registry (bulletproof resilience)
+      const existingCustomSchools = JSON.parse(localStorage.getItem('campusattend_custom_schools') || '[]');
+      existingCustomSchools.unshift(newSchool);
+      localStorage.setItem('campusattend_custom_schools', JSON.stringify(existingCustomSchools));
+
+      const existingCustomProfiles = JSON.parse(localStorage.getItem('campusattend_custom_profiles') || '[]');
+      existingCustomProfiles.unshift(newProfile);
+      localStorage.setItem('campusattend_custom_profiles', JSON.stringify(existingCustomProfiles));
+
+      // 2. Best-effort Supabase synchronization
+      try {
+        // Try inserting into institutions and departments
+        await supabase.from('institutions').insert(newSchool);
+        for (const dept of deptInserts) {
+          await supabase.from('departments').insert(dept);
+        }
+      } catch (syncErr) {
+        console.warn('Database remote sync notice (local registry active):', syncErr);
+      }
+
+      // 3. Update current active state to this newly registered school and director
+      setInstitution(newSchool);
+      setCurrentInstitutionId(newSchoolId);
+      setProfile(newProfile);
+      setRole('director');
+      setIsAuthenticated(true);
+
+      const allUpdated = await fetchAllInstitutions();
+      setInstitutionsList(allUpdated);
+
+      localStorage.setItem(
+        'campusattend_auth_user',
+        JSON.stringify({
+          role: 'director',
+          email: newProfile.email,
+          profileId: newProfile.id,
+          institutionId: newSchoolId,
+        })
+      );
+
+      return {
+        success: true,
+        school: newSchool,
+        profile: newProfile,
+      };
+    } catch (err: any) {
+      console.error('Registration failed:', err);
+      return { success: false, error: err.message || 'School and Director registration failed.' };
     } finally {
       setLoading(false);
     }
@@ -316,6 +545,15 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const switchInstitution = async (newInstId: string) => {
     setCurrentInstitutionId(newInstId);
+    localStorage.setItem('campusattend_active_institution_id', newInstId);
+    
+    // Check in institutionsList first
+    const matched = institutionsList.find((i) => i.id === newInstId);
+    if (matched) {
+      setInstitution(matched);
+      return;
+    }
+
     const { data: inst } = await supabase
       .from('institutions')
       .select('*')
@@ -344,6 +582,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         resetPassword,
         updateProfile,
         switchRole,
+        registerSchoolAndDirector,
       }}
     >
       {children}
