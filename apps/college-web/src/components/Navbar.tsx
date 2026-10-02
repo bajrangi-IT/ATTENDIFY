@@ -46,11 +46,7 @@ export const Navbar: React.FC<NavbarProps> = ({
     studentRecord,
     resetPassword,
     updateProfile,
-    signOut,
-    institutionsList,
-    switchInstitution,
-    currentInstitutionId,
-    registerSchoolAndDirector
+    signOut
   } = useAuth();
   const { addToast } = useToast();
 
@@ -59,18 +55,6 @@ export const Navbar: React.FC<NavbarProps> = ({
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
   const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
   const [isEditProfileModalOpen, setIsEditProfileModalOpen] = useState(false);
-  const [isRegisterSchoolModalOpen, setIsRegisterSchoolModalOpen] = useState(false);
-
-  // New School Modal state
-  const [modalSchoolName, setModalSchoolName] = useState('');
-  const [modalSchoolCode, setModalSchoolCode] = useState('');
-  const [modalCampusAddress, setModalCampusAddress] = useState('SDGI Global University Campus');
-  const [modalDepartments, setModalDepartments] = useState('');
-  const [modalDirectorFirst, setModalDirectorFirst] = useState('');
-  const [modalDirectorLast, setModalDirectorLast] = useState('');
-  const [modalDirectorEmail, setModalDirectorEmail] = useState('');
-  const [modalDirectorPhone, setModalDirectorPhone] = useState('');
-  const [isSavingSchool, setIsSavingSchool] = useState(false);
 
   // Password reset form
   const [resetEmail, setResetEmail] = useState('');
@@ -213,67 +197,6 @@ export const Navbar: React.FC<NavbarProps> = ({
       }
     } finally {
       setIsSavingProfile(false);
-    }
-  };
-
-  const handleModalRegisterSchool = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!modalSchoolName.trim() || !modalSchoolCode.trim()) {
-      addToast({
-        title: 'Missing Required Fields',
-        message: 'School Name and Campus Code are required.',
-        type: 'warning'
-      });
-      return;
-    }
-    if (!modalDirectorFirst.trim() || !modalDirectorEmail.trim()) {
-      addToast({
-        title: 'Missing Director Information',
-        message: 'Director name and institutional email are required.',
-        type: 'warning'
-      });
-      return;
-    }
-
-    setIsSavingSchool(true);
-    try {
-      const depts = modalDepartments.split(',').map((d) => d.trim()).filter(Boolean);
-      const res = await registerSchoolAndDirector(
-        {
-          name: modalSchoolName.trim(),
-          code: modalSchoolCode.trim().toUpperCase(),
-          address: modalCampusAddress.trim(),
-          departments: depts
-        },
-        {
-          firstName: modalDirectorFirst.trim(),
-          lastName: modalDirectorLast.trim(),
-          email: modalDirectorEmail.trim(),
-          phone: modalDirectorPhone.trim(),
-          employeeCode: `DIR-${modalSchoolCode.trim().toUpperCase()}-01`,
-          password: 'CampusPass2026!'
-        }
-      );
-
-      if (!res.success) {
-        addToast({ title: 'Registration Failed', message: res.error || 'Failed to register school.', type: 'error' });
-      } else {
-        addToast({
-          title: 'Campus Registered Successfully',
-          message: `${modalSchoolName} registered and active in ERP system.`,
-          type: 'success'
-        });
-        setIsRegisterSchoolModalOpen(false);
-        // Clear form
-        setModalSchoolName('');
-        setModalSchoolCode('');
-        setModalDirectorFirst('');
-        setModalDirectorLast('');
-        setModalDirectorEmail('');
-        setModalDirectorPhone('');
-      }
-    } finally {
-      setIsSavingSchool(false);
     }
   };
 
@@ -612,138 +535,7 @@ export const Navbar: React.FC<NavbarProps> = ({
         </Modal>
       )}
 
-      {/* Register New School & Campus Modal */}
-      {isRegisterSchoolModalOpen && (
-        <Modal
-          isOpen={isRegisterSchoolModalOpen}
-          onClose={() => setIsRegisterSchoolModalOpen(false)}
-          title="Register New School / Campus & Director"
-        >
-          <form onSubmit={handleModalRegisterSchool} className="space-y-4 text-xs">
-            <p className="text-slate-500 text-[11px]">
-              Onboard a new School or Campus under SDGI Global University and establish its Director workspace.
-            </p>
 
-            <div className="p-3 bg-indigo-50/50 rounded-xl border border-indigo-100 space-y-3">
-              <span className="font-bold text-indigo-900 block text-xs">School Details</span>
-              <div>
-                <label className="block text-slate-700 font-semibold mb-1">School / Institute Name *</label>
-                <input
-                  type="text"
-                  required
-                  value={modalSchoolName}
-                  onChange={(e) => setModalSchoolName(e.target.value)}
-                  placeholder="e.g. School of Artificial Intelligence & Robotics"
-                  className="w-full p-2.5 bg-white border border-slate-200 rounded-xl text-xs"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-slate-700 font-semibold mb-1">Campus Code *</label>
-                  <input
-                    type="text"
-                    required
-                    value={modalSchoolCode}
-                    onChange={(e) => setModalSchoolCode(e.target.value.toUpperCase())}
-                    placeholder="e.g. SAIR"
-                    className="w-full p-2.5 bg-white border border-slate-200 rounded-xl text-xs font-mono uppercase"
-                  />
-                </div>
-                <div>
-                  <label className="block text-slate-700 font-semibold mb-1">Campus Location</label>
-                  <input
-                    type="text"
-                    value={modalCampusAddress}
-                    onChange={(e) => setModalCampusAddress(e.target.value)}
-                    placeholder="e.g. Technology Block, Delhi-NCR"
-                    className="w-full p-2.5 bg-white border border-slate-200 rounded-xl text-xs"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-slate-700 font-semibold mb-1">Initial Departments (Comma-separated)</label>
-                <input
-                  type="text"
-                  value={modalDepartments}
-                  onChange={(e) => setModalDepartments(e.target.value)}
-                  placeholder="e.g. Computer Science, AI & Machine Learning, Data Science"
-                  className="w-full p-2.5 bg-white border border-slate-200 rounded-xl text-xs"
-                />
-              </div>
-            </div>
-
-            <div className="p-3 bg-purple-50/50 rounded-xl border border-purple-100 space-y-3">
-              <span className="font-bold text-purple-900 block text-xs">Director & Dean Credentials</span>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-slate-700 font-semibold mb-1">First Name *</label>
-                  <input
-                    type="text"
-                    required
-                    value={modalDirectorFirst}
-                    onChange={(e) => setModalDirectorFirst(e.target.value)}
-                    placeholder="Dr. Rajesh"
-                    className="w-full p-2.5 bg-white border border-slate-200 rounded-xl text-xs"
-                  />
-                </div>
-                <div>
-                  <label className="block text-slate-700 font-semibold mb-1">Last Name</label>
-                  <input
-                    type="text"
-                    value={modalDirectorLast}
-                    onChange={(e) => setModalDirectorLast(e.target.value)}
-                    placeholder="Sharma"
-                    className="w-full p-2.5 bg-white border border-slate-200 rounded-xl text-xs"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-slate-700 font-semibold mb-1">Official Academic Email *</label>
-                  <input
-                    type="email"
-                    required
-                    value={modalDirectorEmail}
-                    onChange={(e) => setModalDirectorEmail(e.target.value)}
-                    placeholder="director.sair@sdgi.edu.in"
-                    className="w-full p-2.5 bg-white border border-slate-200 rounded-xl text-xs"
-                  />
-                </div>
-                <div>
-                  <label className="block text-slate-700 font-semibold mb-1">Contact Phone</label>
-                  <input
-                    type="tel"
-                    value={modalDirectorPhone}
-                    onChange={(e) => setModalDirectorPhone(e.target.value)}
-                    placeholder="+91 98765 43210"
-                    className="w-full p-2.5 bg-white border border-slate-200 rounded-xl text-xs"
-                  />
-                </div>
-              </div>
-            </div>
-
-            <div className="flex justify-end space-x-2 pt-2">
-              <button
-                type="button"
-                onClick={() => setIsRegisterSchoolModalOpen(false)}
-                className="px-4 py-2 text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl font-medium"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                disabled={isSavingSchool}
-                className="px-4 py-2 text-white bg-purple-600 hover:bg-purple-700 font-bold rounded-xl shadow-xs transition"
-              >
-                {isSavingSchool ? 'Registering School...' : 'Register School & Campus'}
-              </button>
-            </div>
-          </form>
-        </Modal>
-      )}
     </header>
   );
 };
