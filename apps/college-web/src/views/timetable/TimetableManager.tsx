@@ -134,64 +134,106 @@ export const TimetableManager: React.FC = () => {
   // Delete slot
   const [entryToDelete, setEntryToDelete] = useState<TimetableEntryItem | null>(null);
 
-  // Fetch Metadata & Entries
+  // Fetch Metadata & Entries strictly scoped to current institution
   const loadTimetableData = async () => {
     const instId = profile?.institution_id || currentInstitutionId;
     try {
       setLoading(true);
+      if (!instId) {
+        setDepartments([]);
+        setPrograms([]);
+        setSemesters([]);
+        setSections([]);
+        setClassrooms([]);
+        setFacultyList([]);
+        setSubjectOfferings([]);
+        setEntries([]);
+        setLoading(false);
+        return;
+      }
 
-      const deptQuery = instId 
-        ? supabase.from('departments').select('id, name, code').eq('institution_id', instId).order('name')
-        : supabase.from('departments').select('id, name, code').order('name');
-
-      const facQuery = instId
-        ? supabase.from('faculty').select('id, employee_code, profile:profiles(first_name, last_name)').eq('institution_id', instId).order('employee_code')
-        : supabase.from('faculty').select('id, employee_code, profile:profiles(first_name, last_name)').order('employee_code');
-
-      const [deptRes, progRes, semRes, secRes, roomRes, facRes, offerRes] = await Promise.all([
-        deptQuery,
-        supabase.from('programs').select('id, name, code, department_id').order('name'),
-        supabase.from('semesters').select('id, semester_number, program_id').order('semester_number'),
-        supabase.from('sections').select('id, name, semester_id').order('name'),
-        supabase.from('classrooms').select('id, room_number, building').order('room_number'),
-        facQuery,
-        supabase.from('subject_offerings').select('id, subject:subjects(name, code)')
+      // 1. Fetch departments and faculty belonging strictly to this institution
+      const [deptRes, facRes, campRes] = await Promise.all([
+        supabase.from('departments').select('id, name, code').eq('institution_id', instId).order('name'),
+        supabase.from('faculty').select('id, employee_code, profile:profiles(first_name, last_name)').eq('institution_id', instId).order('employee_code'),
+        supabase.from('campuses').select('id').eq('institution_id', instId)
       ]);
 
-      setDepartments(deptRes.data || []);
-      setPrograms(progRes.data || []);
-      setSemesters(semRes.data || []);
+      const deptList = deptRes.data || [];
+      const deptIds = deptList.map((d: any) => d.id);
+      const campIds = (campRes.data || []).map((c: any) => c.id);
 
-      if (secRes.data && secRes.data.length > 0) {
-        setSections(secRes.data);
-        if (formSectionId === '') setFormSectionId(secRes.data[0].id);
+      let progList: any[] = [];
+      let semList: any[] = [];
+      let secList: any[] = [];
+      let subOfferList: any[] = [];
+      let roomList: any[] = [];
+
+      if (campIds.length > 0) {
+        const { data: rooms } = await supabase.from('classrooms').select('id, room_number, building').in('campus_id', campIds).order('room_number');
+        roomList = rooms || [];
       }
 
-      if (roomRes.data && roomRes.data.length > 0) {
-        setClassrooms(roomRes.data);
-        if (formClassroomId === '') setFormClassroomId(roomRes.data[0].id);
+      if (deptIds.length > 0) {
+        const [{ data: progs }, { data: subs }] = await Promise.all([
+          supabase.from('programs').select('id, name, code, department_id').in('department_id', deptIds).order('name'),
+          supabase.from('subjects').select('id, name, code').in('department_id', deptIds)
+        ]);
+
+        progList = progs || [];
+        const progIds = progList.map((p: any) => p.id);
+        const subIds = (subs || []).map((s: any) => s.id);
+
+        if (progIds.length > 0) {
+          const { data: sems } = await supabase.from('semesters').select('id, semester_number, program_id').in('program_id', progIds).order('semester_number');
+          semList = sems || [];
+          const semIds = semList.map((s: any) => s.id);
+
+          if (semIds.length > 0) {
+            const { data: secs } = await supabase.from('sections').select('id, name, semester_id').in('semester_id', semIds).order('name');
+            secList = secs || [];
+          }
+        }
+
+        if (subIds.length > 0) {
+          const { data: offers } = await supabase.from('subject_offerings').select('id, subject:subjects(name, code)').in('subject_id', subIds);
+          subOfferList = offers || [];
+        }
       }
 
-      if (facRes.data && facRes.data.length > 0) {
-        const formattedFac = facRes.data.map((f: any) => ({
-          id: f.id,
-          name: f.profile ? `${f.profile.first_name} ${f.profile.last_name} (${f.employee_code})` : f.employee_code
-        }));
-        setFacultyList(formattedFac);
-        if (formFacultyId === '') setFormFacultyId(formattedFac[0].id);
+      setDepartments(deptList);
+      setPrograms(progList);
+      setSemesters(semList);
+      setSections(secList);
+      setClassrooms(roomList);
+
+      const secIds = secList.map((s: any) => s.id);
+
+      const formattedFac = (facRes.data || []).map((f: any) => ({
+        id: f.id,
+        name: f.profile ? `${f.profile.first_name} ${f.profile.last_name} (${f.employee_code})` : f.employee_code
+      }));
+      setFacultyList(formattedFac);
+
+      const formattedOffers = subOfferList.map((o: any) => ({
+        id: o.id,
+        name: o.subject?.name || 'Subject',
+        code: o.subject?.code || ''
+      }));
+      setSubjectOfferings(formattedOffers);
+
+      if (formSectionId === '' && secList.length > 0) setFormSectionId(secList[0].id);
+      if (formClassroomId === '' && roomList.length > 0) setFormClassroomId(roomList[0].id);
+      if (formFacultyId === '' && formattedFac.length > 0) setFormFacultyId(formattedFac[0].id);
+      if (formSubjectOfferingId === '' && formattedOffers.length > 0) setFormSubjectOfferingId(formattedOffers[0].id);
+
+      // Query timetable entries - strictly scoped to this institution's sections
+      if (secIds.length === 0) {
+        setEntries([]);
+        setLoading(false);
+        return;
       }
 
-      if (offerRes.data && offerRes.data.length > 0) {
-        const formattedOffers = offerRes.data.map((o: any) => ({
-          id: o.id,
-          name: o.subject?.name || 'Subject',
-          code: o.subject?.code || ''
-        }));
-        setSubjectOfferings(formattedOffers);
-        if (formSubjectOfferingId === '') setFormSubjectOfferingId(formattedOffers[0].id);
-      }
-
-      // Query timetable entries
       let query = supabase
         .from('timetable_entries')
         .select(`
@@ -219,7 +261,8 @@ export const TimetableManager: React.FC = () => {
             id,
             subject:subjects(name, code)
           )
-        `);
+        `)
+        .in('section_id', secIds);
 
       if (selectedSectionId !== 'ALL') {
         query = query.eq('section_id', selectedSectionId);
@@ -242,7 +285,7 @@ export const TimetableManager: React.FC = () => {
 
   useEffect(() => {
     loadTimetableData();
-  }, [selectedSectionId]);
+  }, [selectedSectionId, profile?.institution_id, currentInstitutionId]);
 
   // Load Timetable Change History
   const loadChangeHistory = async () => {

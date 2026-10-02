@@ -61,38 +61,81 @@ export const DirectorDashboard: React.FC<DirectorDashboardProps> = ({
   useEffect(() => {
     async function loadDirectorMetrics() {
       setLoading(true);
-      const instId = profile?.institution_id || currentInstitutionId || DEFAULT_INSTITUTION_ID;
+      const instId = profile?.institution_id || currentInstitutionId;
+      if (!instId) {
+        setCounts({
+          totalStudents: 0,
+          totalFaculty: 0,
+          totalDepartments: 0,
+          heldSessions: 0,
+          cancelledSessions: 0,
+          averageAttendance: 0,
+          detainedCount: 0,
+        });
+        setLiveSessions([]);
+        setDepartmentStats([]);
+        setDepartmentsList([]);
+        setLoading(false);
+        return;
+      }
+
       try {
-        // High-performance parallel queries scoped to institution
+        // High-performance parallel queries strictly scoped to institution
         const [
           { count: studCount },
           { data: facData },
-          { count: deptCount },
-          { count: heldCount },
-          { count: cancelledCount },
-          { data: inProgressSessions },
-          { data: summaryRows },
           { data: depts },
         ] = await Promise.all([
           supabase.from('students').select('*', { count: 'exact', head: true }).eq('institution_id', instId),
           supabase.from('faculty').select('id, department_id, employee_code').eq('institution_id', instId),
-          supabase.from('departments').select('*', { count: 'exact', head: true }).eq('institution_id', instId),
-          supabase.from('attendance_sessions').select('*', { count: 'exact', head: true }).in('status', ['completed', 'audit_locked']),
-          supabase.from('attendance_sessions').select('*', { count: 'exact', head: true }).eq('status', 'cancelled'),
-          supabase.from('attendance_sessions')
-            .select(`
-              id, status, session_date, start_time, end_time, session_type, timetable_entry_id,
-              subject_offering:subject_offerings(subject:subjects(code, name, department_id)),
-              classroom:classrooms(room_number, building),
-              section:sections(name, semester:semesters(program:programs(department_id))),
-              faculty:faculty(department_id, profile:profiles(first_name, last_name))
-            `)
-            .eq('status', 'in_progress')
-            .order('created_at', { ascending: false })
-            .limit(25),
-          supabase.from('v_student_attendance_summary').select('attendance_percentage, threshold_status, department_id'),
           supabase.from('departments').select('id, name, code').eq('institution_id', instId).order('name'),
         ]);
+
+        const facultyList = facData || [];
+        const facultyIds = facultyList.map((f: any) => f.id);
+        const deptListRaw = depts || [];
+        const deptIds = deptListRaw.map((d: any) => d.id);
+
+        let heldCount = 0;
+        let cancelledCount = 0;
+        let inProgressSessions: any[] = [];
+        let summaryRows: any[] = [];
+
+        // Only query sessions if this institution has faculty
+        if (facultyIds.length > 0) {
+          const [
+            { count: held },
+            { count: cancelled },
+            { data: live }
+          ] = await Promise.all([
+            supabase.from('attendance_sessions').select('*', { count: 'exact', head: true }).in('faculty_id', facultyIds).in('status', ['completed', 'audit_locked']),
+            supabase.from('attendance_sessions').select('*', { count: 'exact', head: true }).in('faculty_id', facultyIds).eq('status', 'cancelled'),
+            supabase.from('attendance_sessions')
+              .select(`
+                id, status, session_date, start_time, end_time, session_type, timetable_entry_id,
+                subject_offering:subject_offerings(subject:subjects(code, name, department_id)),
+                classroom:classrooms(room_number, building),
+                section:sections(name, semester:semesters(program:programs(department_id))),
+                faculty:faculty(department_id, profile:profiles(first_name, last_name))
+              `)
+              .in('faculty_id', facultyIds)
+              .eq('status', 'in_progress')
+              .order('created_at', { ascending: false })
+              .limit(25),
+          ]);
+          heldCount = held || 0;
+          cancelledCount = cancelled || 0;
+          inProgressSessions = live || [];
+        }
+
+        // Only query summary rows if this institution has departments
+        if (deptIds.length > 0) {
+          const { data: sumRows } = await supabase
+            .from('v_student_attendance_summary')
+            .select('attendance_percentage, threshold_status, department_id')
+            .in('department_id', deptIds);
+          summaryRows = sumRows || [];
+        }
 
         let avg = 0;
         let detained = 0;
@@ -102,16 +145,16 @@ export const DirectorDashboard: React.FC<DirectorDashboardProps> = ({
           detained = summaryRows.filter((row: any) => row.threshold_status === 'critical').length;
         }
 
-        setDepartmentsList(depts || []);
-        setRawFaculty(facData || []);
-        setRawSummaryRows(summaryRows || []);
+        setDepartmentsList(deptListRaw);
+        setRawFaculty(facultyList);
+        setRawSummaryRows(summaryRows);
 
         setCounts({
           totalStudents: studCount || summaryRows?.length || 0,
-          totalFaculty: facData?.length || 0,
-          totalDepartments: deptCount || depts?.length || 0,
-          heldSessions: heldCount || 0,
-          cancelledSessions: cancelledCount || 0,
+          totalFaculty: facultyList.length,
+          totalDepartments: deptListRaw.length,
+          heldSessions: heldCount,
+          cancelledSessions: cancelledCount,
           averageAttendance: avg,
           detainedCount: detained,
         });
@@ -186,7 +229,7 @@ export const DirectorDashboard: React.FC<DirectorDashboardProps> = ({
       window.removeEventListener('campusattend:timetable-updated', handleSync);
       window.removeEventListener('campusattend:sessions-updated', handleSync);
     };
-  }, [toast]);
+  }, [toast, profile?.institution_id, currentInstitutionId]);
 
   // Instant Dismiss / End active lecture
   const handleDismissSession = async (sessionId: string) => {

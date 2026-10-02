@@ -52,41 +52,96 @@ export const BulkStudentImport: React.FC = () => {
   const [selectedJobErrors, setSelectedJobErrors] = useState<any[] | null>(null);
 
   // Load Metadata
+  // Load Metadata strictly scoped to current institution
   useEffect(() => {
     async function loadMetadata() {
-      const instId = profile?.institution_id || currentInstitutionId || DEFAULT_INSTITUTION_ID;
+      const instId = profile?.institution_id || currentInstitutionId;
+      if (!instId) {
+        setSections([]);
+        setDepartments([]);
+        setFaculty([]);
+        setClassrooms([]);
+        setSubjects([]);
+        setSubjectOfferings([]);
+        return;
+      }
+
       try {
-        const [secRes, deptRes, facRes, roomRes, subRes, offRes] = await Promise.all([
-          supabase.from('sections').select('id, name, semester_id').order('name'),
+        const [deptRes, facRes, campRes] = await Promise.all([
           supabase.from('departments').select('id, name, code').eq('institution_id', instId).order('code'),
           supabase.from('faculty').select('id, employee_code, profile:profiles(first_name, last_name)').eq('institution_id', instId),
-          supabase.from('classrooms').select('id, room_number, building'),
-          supabase.from('subjects').select('id, code, name'),
-          supabase.from('subject_offerings').select('id, subject:subjects(id, code, name)')
+          supabase.from('campuses').select('id').eq('institution_id', instId)
         ]);
 
-        setSections(secRes.data || []);
-        setDepartments(deptRes.data || []);
+        const deptList = deptRes.data || [];
+        const deptIds = deptList.map((d: any) => d.id);
+        const campIds = (campRes.data || []).map((c: any) => c.id);
+
+        let secList: any[] = [];
+        let subList: any[] = [];
+        let offList: any[] = [];
+        let roomList: any[] = [];
+
+        if (campIds.length > 0) {
+          const { data: rooms } = await supabase.from('classrooms').select('id, room_number, building').in('campus_id', campIds);
+          roomList = rooms || [];
+        }
+
+        if (deptIds.length > 0) {
+          const [{ data: progData }, { data: subData }] = await Promise.all([
+            supabase.from('programs').select('id').in('department_id', deptIds),
+            supabase.from('subjects').select('id, code, name').in('department_id', deptIds)
+          ]);
+
+          subList = subData || [];
+          const subIds = subList.map((s: any) => s.id);
+          const progIds = (progData || []).map((p: any) => p.id);
+
+          if (progIds.length > 0) {
+            const { data: semData } = await supabase.from('semesters').select('id').in('program_id', progIds);
+            const semIds = (semData || []).map((s: any) => s.id);
+
+            if (semIds.length > 0) {
+              const { data: secs } = await supabase.from('sections').select('id, name, semester_id').in('semester_id', semIds).order('name');
+              secList = secs || [];
+            }
+          }
+
+          if (subIds.length > 0) {
+            const { data: offers } = await supabase.from('subject_offerings').select('id, subject:subjects(id, code, name)').in('subject_id', subIds);
+            offList = offers || [];
+          }
+        }
+
+        setSections(secList);
+        setDepartments(deptList);
         setFaculty(facRes.data || []);
-        setClassrooms(roomRes.data || []);
-        setSubjects(subRes.data || []);
-        setSubjectOfferings(offRes.data || []);
+        setClassrooms(roomList);
+        setSubjects(subList);
+        setSubjectOfferings(offList);
       } catch (err: any) {
         console.error('Failed to load import metadata:', err);
       }
     }
     loadMetadata();
-  }, []);
+  }, [profile?.institution_id, currentInstitutionId]);
 
-  // Load History Jobs
+  // Load History Jobs strictly for this institution
   const fetchImportHistory = async () => {
     setLoadingHistory(true);
+    const instId = profile?.institution_id || currentInstitutionId;
     try {
-      const { data, error } = await supabase
+      let query = supabase
         .from('import_jobs')
         .select('*')
         .order('created_at', { ascending: false })
         .limit(25);
+
+      if (instId) {
+        query = query.eq('institution_id', instId);
+      }
+
+      const { data, error } = await query;
 
       if (error) throw error;
       setHistoryJobs(data || []);

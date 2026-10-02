@@ -119,14 +119,21 @@ export const FacultyDirectory: React.FC = () => {
   const [statusConfirmFaculty, setStatusConfirmFaculty] = useState<FacultyItem | null>(null);
 
   const fetchFaculty = async () => {
-    const instId = profile?.institution_id || currentInstitutionId || DEFAULT_INSTITUTION_ID;
+    const instId = profile?.institution_id || currentInstitutionId;
+    if (!instId) {
+      setFaculty([]);
+      setDepartments([]);
+      setSections([]);
+      setSubjectOfferings([]);
+      setLoading(false);
+      return;
+    }
+
     try {
       setLoading(true);
       const [
         { data: facData, error: facErr },
         { data: deptData, error: deptErr },
-        { data: secData },
-        { data: offerData }
       ] = await Promise.all([
         supabase
           .from('faculty')
@@ -145,26 +152,55 @@ export const FacultyDirectory: React.FC = () => {
           .eq('institution_id', instId)
           .order('employee_code'),
         supabase.from('departments').select('id, name, code').eq('institution_id', instId).order('name'),
-        supabase.from('sections').select('id, name').order('name'),
-        supabase.from('subject_offerings').select('id, subject:subjects(name, code)')
       ]);
 
       if (facErr) throw facErr;
       if (deptErr) throw deptErr;
 
-      setFaculty((facData as any) || []);
-      setDepartments(deptData || []);
-      setSections(secData || []);
-      setSubjectOfferings(offerData || []);
+      const deptList = deptData || [];
+      const deptIds = deptList.map((d: any) => d.id);
 
-      if (deptData && deptData.length > 0 && !deptId) {
-        setDeptId(deptData[0].id);
+      let secList: any[] = [];
+      let offerList: any[] = [];
+
+      if (deptIds.length > 0) {
+        const [{ data: progData }, { data: subData }] = await Promise.all([
+          supabase.from('programs').select('id').in('department_id', deptIds),
+          supabase.from('subjects').select('id').in('department_id', deptIds)
+        ]);
+
+        const progIds = (progData || []).map((p: any) => p.id);
+        const subIds = (subData || []).map((s: any) => s.id);
+
+        if (progIds.length > 0) {
+          const { data: semData } = await supabase.from('semesters').select('id').in('program_id', progIds);
+          const semIds = (semData || []).map((s: any) => s.id);
+
+          if (semIds.length > 0) {
+            const { data: secs } = await supabase.from('sections').select('id, name').in('semester_id', semIds).order('name');
+            secList = secs || [];
+          }
+        }
+
+        if (subIds.length > 0) {
+          const { data: offers } = await supabase.from('subject_offerings').select('id, subject:subjects(name, code)').in('subject_id', subIds);
+          offerList = offers || [];
+        }
       }
-      if (offerData && offerData.length > 0 && !assignOfferingId) {
-        setAssignOfferingId(offerData[0].id);
+
+      setFaculty((facData as any) || []);
+      setDepartments(deptList);
+      setSections(secList);
+      setSubjectOfferings(offerList);
+
+      if (deptList.length > 0 && !deptId) {
+        setDeptId(deptList[0].id);
       }
-      if (secData && secData.length > 0 && !assignSectionId) {
-        setAssignSectionId(secData[0].id);
+      if (offerList.length > 0 && !assignOfferingId) {
+        setAssignOfferingId(offerList[0].id);
+      }
+      if (secList.length > 0 && !assignSectionId) {
+        setAssignSectionId(secList[0].id);
       }
     } catch (err: any) {
       console.error('Error fetching faculty:', err);

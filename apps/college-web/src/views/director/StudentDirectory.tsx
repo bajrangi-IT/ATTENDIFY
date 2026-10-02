@@ -138,26 +138,79 @@ export const StudentDirectory: React.FC = () => {
   // Status toggle confirmation
   const [statusToggleStudent, setStatusToggleStudent] = useState<StudentDirectoryItem | null>(null);
 
-  // Load Metadata
+  // Load Metadata strictly scoped to current institution
   useEffect(() => {
     async function loadAcademicMetadata() {
-      const instId = profile?.institution_id || currentInstitutionId || DEFAULT_INSTITUTION_ID;
+      const instId = profile?.institution_id || currentInstitutionId;
+      if (!instId) {
+        setDepartments([]);
+        setPrograms([]);
+        setSemesters([]);
+        setSections([]);
+        return;
+      }
+
       try {
-        const [{ data: depts }, { data: progs }, { data: sems }, { data: secs }] = await Promise.all([
-          supabase.from('departments').select('id, name, code').eq('institution_id', instId).order('name'),
-          supabase.from('programs').select('id, name, code, department_id').order('name'),
-          supabase.from('semesters').select('id, semester_number, program_id').order('semester_number'),
-          supabase.from('sections').select('id, name, semester_id').order('name'),
-        ]);
+        const { data: depts } = await supabase
+          .from('departments')
+          .select('id, name, code')
+          .eq('institution_id', instId)
+          .order('name');
 
-        setDepartments(depts || []);
-        setPrograms(progs || []);
-        setSemesters(sems || []);
-        setSections(secs || []);
+        const deptList = depts || [];
+        setDepartments(deptList);
 
-        if (secs && secs.length > 0) {
-          setNewSectionId(secs[0].id);
-          setTransferTargetSectionId(secs[0].id);
+        const deptIds = deptList.map((d: any) => d.id);
+        if (deptIds.length === 0) {
+          setPrograms([]);
+          setSemesters([]);
+          setSections([]);
+          return;
+        }
+
+        const { data: progs } = await supabase
+          .from('programs')
+          .select('id, name, code, department_id')
+          .in('department_id', deptIds)
+          .order('name');
+
+        const progList = progs || [];
+        setPrograms(progList);
+
+        const progIds = progList.map((p: any) => p.id);
+        if (progIds.length === 0) {
+          setSemesters([]);
+          setSections([]);
+          return;
+        }
+
+        const { data: sems } = await supabase
+          .from('semesters')
+          .select('id, semester_number, program_id')
+          .in('program_id', progIds)
+          .order('semester_number');
+
+        const semList = sems || [];
+        setSemesters(semList);
+
+        const semIds = semList.map((s: any) => s.id);
+        if (semIds.length === 0) {
+          setSections([]);
+          return;
+        }
+
+        const { data: secs } = await supabase
+          .from('sections')
+          .select('id, name, semester_id')
+          .in('semester_id', semIds)
+          .order('name');
+
+        const secList = secs || [];
+        setSections(secList);
+
+        if (secList.length > 0) {
+          setNewSectionId(secList[0].id);
+          setTransferTargetSectionId(secList[0].id);
         }
       } catch (err: any) {
         console.error('Failed to load academic metadata:', err);
@@ -166,30 +219,113 @@ export const StudentDirectory: React.FC = () => {
     loadAcademicMetadata();
   }, [profile?.institution_id, currentInstitutionId]);
 
-  // Server-Side Search Query to PostgreSQL RPC
+  // Server-Side Search Query strictly scoped to institution_id
   const fetchStudents = async () => {
     setLoading(true);
-    const instId = profile?.institution_id || currentInstitutionId || DEFAULT_INSTITUTION_ID;
+    const instId = profile?.institution_id || currentInstitutionId;
+    if (!instId) {
+      setStudents([]);
+      setTotalCount(0);
+      setLoading(false);
+      return;
+    }
+
     try {
       const offset = (currentPage - 1) * pageSize;
-      const { data, error } = await supabase.rpc('rpc_search_students', {
-        p_query: searchTerm.trim() || null,
-        p_department_id: selectedDeptId || null,
-        p_program_id: selectedProgramId || null,
-        p_semester_id: selectedSemesterId || null,
-        p_section_id: selectedSectionId || null,
-        p_threshold_status: selectedThreshold || null,
-        p_limit: pageSize,
-        p_offset: offset,
-        p_institution_id: instId
-      });
+
+      // Query students strictly filtered by this institution_id
+      let query = supabase
+        .from('students')
+        .select(`
+          id, roll_number, registration_number, batch_year, enrollment_status,
+          profile:profiles(id, first_name, last_name, email, phone_number, is_active),
+          current_section:sections(
+            id, name,
+            semester:semesters(
+              id, semester_number,
+              program:programs(
+                id, name, code, department_id,
+                department:departments(id, name, code)
+              )
+            )
+          )
+        `, { count: 'exact' })
+        .eq('institution_id', instId);
+
+      if (selectedSectionId) {
+        query = query.eq('current_section_id', selectedSectionId);
+      }
+      if (searchTerm.trim()) {
+        const q = `%${searchTerm.trim()}%`;
+        query = query.or(`roll_number.ilike.${q},registration_number.ilike.${q}`);
+      }
+
+      const { data: studentRows, count, error } = await query
+        .range(offset, offset + pageSize - 1)
+        .order('roll_number');
 
       if (error) throw error;
 
-      if (data) {
-        setStudents(data.items || []);
-        setTotalCount(data.total_count || 0);
+      // Filter by department/program/semester in memory if requested
+      let filtered = studentRows || [];
+      if (selectedDeptId) {
+        filtered = filtered.filter((s: any) => s.current_section?.semester?.program?.department_id === selectedDeptId);
       }
+      if (selectedProgramId) {
+        filtered = filtered.filter((s: any) => s.current_section?.semester?.program?.id === selectedProgramId);
+      }
+      if (selectedSemesterId) {
+        filtered = filtered.filter((s: any) => s.current_section?.semester?.id === selectedSemesterId);
+      }
+
+      // Fetch attendance summaries for these student IDs
+      const sIds = filtered.map((s: any) => s.id);
+      let summaryMap: Record<string, any> = {};
+      if (sIds.length > 0) {
+        const { data: sumData } = await supabase
+          .from('v_student_attendance_summary')
+          .select('student_id, attendance_percentage, threshold_status')
+          .in('student_id', sIds);
+        if (sumData) {
+          sumData.forEach((row: any) => {
+            summaryMap[row.student_id] = row;
+          });
+        }
+      }
+
+      const mapped: StudentDirectoryItem[] = filtered.map((st: any) => {
+        const sum = summaryMap[st.id];
+        const pct = sum ? parseFloat(sum.attendance_percentage) || 0 : 0;
+        const status = sum?.threshold_status || (pct >= 75 ? 'good' : pct >= 65 ? 'warning' : 'critical');
+
+        return {
+          student_id: st.id,
+          profile_id: st.profile?.id || '',
+          roll_number: st.roll_number,
+          registration_number: st.registration_number,
+          batch_year: st.batch_year,
+          enrollment_status: st.enrollment_status,
+          first_name: st.profile?.first_name || '',
+          last_name: st.profile?.last_name || '',
+          full_name: `${st.profile?.first_name || ''} ${st.profile?.last_name || ''}`.trim(),
+          email: st.profile?.email || '',
+          phone: st.profile?.phone_number || '',
+          user_active: st.profile?.is_active ?? true,
+          department_id: st.current_section?.semester?.program?.department?.id || '',
+          department_name: st.current_section?.semester?.program?.department?.name || 'Unassigned',
+          program_id: st.current_section?.semester?.program?.id || '',
+          program_name: st.current_section?.semester?.program?.name || 'Unassigned',
+          semester_id: st.current_section?.semester?.id || '',
+          semester_number: st.current_section?.semester?.semester_number || 1,
+          section_id: st.current_section?.id || '',
+          section_name: st.current_section?.name || 'Unassigned',
+          overall_attendance_percentage: pct,
+          threshold_status: status as any,
+        };
+      });
+
+      setStudents(mapped);
+      setTotalCount(count || mapped.length);
     } catch (err: any) {
       console.error('Failed to query students:', err);
       toast.error('Search failed', err.message);

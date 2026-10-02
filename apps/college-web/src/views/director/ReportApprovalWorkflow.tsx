@@ -17,7 +17,7 @@ import {
 } from 'lucide-react';
 
 export const ReportApprovalWorkflow: React.FC = () => {
-  const { profile } = useAuth();
+  const { profile, currentInstitutionId } = useAuth();
   const toast = useToast();
 
   const [loading, setLoading] = useState(true);
@@ -33,7 +33,30 @@ export const ReportApprovalWorkflow: React.FC = () => {
 
   const fetchReports = async () => {
     setLoading(true);
+    const instId = profile?.institution_id || currentInstitutionId;
     try {
+      if (!instId) {
+        setReports([]);
+        setLoading(false);
+        return;
+      }
+
+      // Only fetch reports belonging to faculty of this institution
+      const { data: instFaculty, error: facErr } = await supabase
+        .from('faculty')
+        .select('id')
+        .eq('institution_id', instId);
+
+      if (facErr) throw facErr;
+
+      const facultyIds = (instFaculty || []).map((f) => f.id);
+
+      if (facultyIds.length === 0) {
+        setReports([]);
+        setLoading(false);
+        return;
+      }
+
       const { data, error } = await supabase
         .from('attendance_session_reports')
         .select(`
@@ -45,8 +68,9 @@ export const ReportApprovalWorkflow: React.FC = () => {
             section:sections(name, semester:semesters(semester_number, program:programs(name, code))),
             classroom:classrooms(room_number, building)
           ),
-          faculty:faculty(profile:profiles(first_name, last_name, email))
+          faculty:faculty(id, institution_id, profile:profiles(first_name, last_name, email))
         `)
+        .in('faculty_id', facultyIds)
         .order('created_at', { ascending: false });
 
       if (error) throw error;
@@ -61,7 +85,7 @@ export const ReportApprovalWorkflow: React.FC = () => {
 
   useEffect(() => {
     fetchReports();
-  }, []);
+  }, [profile?.institution_id, currentInstitutionId]);
 
   // Fetch student roster whenever a report is opened for review
   useEffect(() => {

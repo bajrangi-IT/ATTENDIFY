@@ -41,7 +41,7 @@ export const AcademicSetup: React.FC = () => {
   const [campusSchoolName, setCampusSchoolName] = useState('');
   const [campusSchoolCode, setCampusSchoolCode] = useState('');
   const [campusAddressInput, setCampusAddressInput] = useState('SDGI Global University Campus');
-  const [campusDeptInput, setCampusDeptInput] = useState('Computer Science, Management, Applied Sciences');
+  const [campusDeptInput, setCampusDeptInput] = useState('');
   const [campusDirectorFirst, setCampusDirectorFirst] = useState('');
   const [campusDirectorLast, setCampusDirectorLast] = useState('');
   const [campusDirectorEmail, setCampusDirectorEmail] = useState('');
@@ -110,64 +110,109 @@ export const AcademicSetup: React.FC = () => {
     setLoading(true);
     const instId = profile?.institution_id || currentInstitutionId || DEFAULT_INSTITUTION_ID;
     try {
+      // 1. Fetch departments, academic years, and campuses strictly for this institution
       const [
         { data: depts, error: dErr },
-        { data: progs, error: pErr },
-        { data: sems },
-        { data: secs, error: sErr },
-        { data: subs },
         { data: years, error: yErr },
-        { data: offers },
-        { data: rooms },
-        { data: camps }
+        { data: camps, error: cErr }
       ] = await Promise.all([
         supabase.from('departments').select('*, hod:profiles(*)').eq('institution_id', instId).order('name'),
-        supabase.from('programs').select('*, department:departments(name, code)').order('name'),
-        supabase.from('semesters').select('*, program:programs(name, code), academic_year:academic_years(name)').order('semester_number'),
-        supabase.from('sections').select('*, semester:semesters(semester_number, program:programs(name, code))').order('name'),
-        supabase.from('subjects').select('*, department:departments(name, code)').order('code'),
         supabase.from('academic_years').select('*').eq('institution_id', instId).order('start_date', { ascending: false }),
-        supabase.from('subject_offerings').select(`
-          id, is_active,
-          subject:subjects(id, name, code, credits),
-          semester:semesters(id, semester_number, program:programs(name, code)),
-          academic_year:academic_years(name)
-        `),
-        supabase.from('classrooms').select('*, campus:campuses(name)').order('room_number'),
-        supabase.from('campuses').select('*').order('name')
+        supabase.from('campuses').select('*').eq('institution_id', instId).order('name')
       ]);
 
       if (dErr) throw dErr;
-      if (pErr) throw pErr;
-      if (sErr) throw sErr;
       if (yErr) throw yErr;
+      if (cErr) throw cErr;
 
-      setDepartments(depts || []);
-      setPrograms(progs || []);
-      setSemesters(sems || []);
-      setSections(secs || []);
-      setSubjects(subs || []);
+      const deptList = depts || [];
+      const deptIds = deptList.map((d: any) => d.id);
+      const campList = camps || [];
+      const campIds = campList.map((c: any) => c.id);
+
+      // 2. Fetch programs and subjects strictly belonging to this institution's departments
+      let progList: any[] = [];
+      let subList: any[] = [];
+      if (deptIds.length > 0) {
+        const [{ data: progs, error: pErr }, { data: subs }] = await Promise.all([
+          supabase.from('programs').select('*, department:departments(name, code)').in('department_id', deptIds).order('name'),
+          supabase.from('subjects').select('*, department:departments(name, code)').in('department_id', deptIds).order('code')
+        ]);
+        if (pErr) throw pErr;
+        progList = progs || [];
+        subList = subs || [];
+      }
+
+      const progIds = progList.map((p: any) => p.id);
+      const subIds = subList.map((s: any) => s.id);
+
+      // 3. Fetch semesters strictly belonging to this institution's programs
+      let semList: any[] = [];
+      if (progIds.length > 0) {
+        const { data: sems } = await supabase
+          .from('semesters')
+          .select('*, program:programs(name, code), academic_year:academic_years(name)')
+          .in('program_id', progIds)
+          .order('semester_number');
+        semList = sems || [];
+      }
+
+      const semIds = semList.map((s: any) => s.id);
+
+      // 4. Fetch sections strictly belonging to this institution's semesters
+      let secList: any[] = [];
+      if (semIds.length > 0) {
+        const { data: secs, error: sErr } = await supabase
+          .from('sections')
+          .select('*, semester:semesters(semester_number, program:programs(name, code))')
+          .in('semester_id', semIds)
+          .order('name');
+        if (sErr) throw sErr;
+        secList = secs || [];
+      }
+
+      // 5. Fetch subject offerings strictly belonging to this institution's subjects
+      let offerList: any[] = [];
+      if (subIds.length > 0) {
+        const { data: offers } = await supabase
+          .from('subject_offerings')
+          .select(`
+            id, is_active,
+            subject:subjects(id, name, code, credits),
+            semester:semesters(id, semester_number, program:programs(name, code)),
+            academic_year:academic_years(name)
+          `)
+          .in('subject_id', subIds);
+        offerList = offers || [];
+      }
+
+      // 6. Fetch classrooms strictly belonging to this institution's campuses
+      let roomList: any[] = [];
+      if (campIds.length > 0) {
+        const { data: rooms } = await supabase
+          .from('classrooms')
+          .select('*, campus:campuses(name)')
+          .in('campus_id', campIds)
+          .order('room_number');
+        roomList = rooms || [];
+      }
+
+      setDepartments(deptList);
+      setPrograms(progList);
+      setSemesters(semList);
+      setSections(secList);
+      setSubjects(subList);
       setAcademicYears(years || []);
-      setSubjectOfferings(offers || []);
-      setClassrooms(rooms || []);
-      setCampuses(camps || []);
+      setSubjectOfferings(offerList);
+      setClassrooms(roomList);
+      setCampuses(campList);
 
-      if (depts && depts.length > 0) {
-        if (!progDeptId) setProgDeptId(depts[0].id);
-        if (!subjectDeptId) setSubjectDeptId(depts[0].id);
-      }
-      if (camps && camps.length > 0 && !roomCampusId) {
-        setRoomCampusId(camps[0].id);
-      }
-      if (sems && sems.length > 0) {
-        setSectionSemesterId((prev) => prev || sems[0].id);
-      }
-      if (subs && subs.length > 0 && !offeringSubjectId) {
-        setOfferingSubjectId(subs[0].id);
-      }
-      if (years && years.length > 0 && !offeringYearId) {
-        setOfferingYearId(years[0].id);
-      }
+      setProgDeptId(deptList[0]?.id || '');
+      setSubjectDeptId(deptList[0]?.id || '');
+      setRoomCampusId(campList[0]?.id || '');
+      setSectionSemesterId(semList[0]?.id || '');
+      setOfferingSubjectId(subList[0]?.id || '');
+      setOfferingYearId(years?.[0]?.id || '');
     } catch (err: any) {
       console.error('Error fetching academic setup:', err);
       toast.error('Failed to load academic setup', err.message);

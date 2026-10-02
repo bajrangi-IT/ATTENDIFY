@@ -153,7 +153,7 @@ export const InstitutionalReportsView: React.FC = () => {
           reportType: selectedReportType,
           format: selectedFormat,
           filters: {
-            institutionId: profile?.institution_id || '00000000-0000-0000-0000-000000000001',
+            institutionId: profile?.institution_id || currentInstitutionId || '00000000-0000-0000-0000-000000000001',
             departmentId: selectedDepartment !== 'all' ? selectedDepartment : undefined,
             startDate: startDate || undefined,
             endDate: endDate || undefined,

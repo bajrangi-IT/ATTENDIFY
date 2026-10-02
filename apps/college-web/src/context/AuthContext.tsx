@@ -106,7 +106,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     setProfile(prof);
     setRole(prof.role);
 
-    const instId = overrideInstId || prof.institution_id || DEFAULT_INSTITUTION_ID;
+    const instId = prof.institution_id || overrideInstId || DEFAULT_INSTITUTION_ID;
     setCurrentInstitutionId(instId);
 
     const allInsts = await fetchAllInstitutions();
@@ -389,7 +389,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         const roleErr = await checkRoleMismatch(matchedCustom.role);
         if (roleErr) return roleErr;
 
-        const instId = targetInstitutionId || matchedCustom.institution_id;
+        const instId = matchedCustom.institution_id || targetInstitutionId || DEFAULT_INSTITUTION_ID;
         await loadProfileDetails(matchedCustom, instId);
         setIsAuthenticated(true);
         localStorage.setItem(
@@ -423,8 +423,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           const roleErr = await checkRoleMismatch(fallbackProf.role);
           if (roleErr) return roleErr;
 
-          const instId = targetInstitutionId || fallbackProf.institution_id || DEFAULT_INSTITUTION_ID;
-          const scopedProf = targetInstitutionId ? { ...fallbackProf, institution_id: targetInstitutionId } : fallbackProf;
+          const instId = fallbackProf.institution_id || targetInstitutionId || DEFAULT_INSTITUTION_ID;
+          const scopedProf = { ...fallbackProf, institution_id: instId };
           await loadProfileDetails(scopedProf, instId);
           setIsAuthenticated(true);
           localStorage.setItem(
@@ -454,7 +454,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           const roleErr = await checkRoleMismatch(prof.role);
           if (roleErr) return roleErr;
 
-          const instId = targetInstitutionId || prof.institution_id;
+          const instId = prof.institution_id || targetInstitutionId || DEFAULT_INSTITUTION_ID;
           await loadProfileDetails(prof, instId);
           setIsAuthenticated(true);
           localStorage.setItem(
@@ -529,10 +529,10 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         password: cleanPass,
       };
 
-      // Create initial departments
+      // Create initial departments only if specifically provided by director
       const initialDeptNames = (schoolData.departments && schoolData.departments.length > 0)
         ? schoolData.departments
-        : ['Computer Science & Engineering', 'Management Studies', 'Applied Sciences'];
+        : [];
 
       const deptInserts = initialDeptNames.map((dName, idx) => ({
         id: crypto.randomUUID(),
