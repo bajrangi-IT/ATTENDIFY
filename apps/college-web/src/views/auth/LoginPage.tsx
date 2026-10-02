@@ -16,7 +16,6 @@ import {
   Sparkles,
   ShieldCheck,
   Building2,
-  UserCheck,
   PlusCircle,
   CheckCircle2,
   Layers,
@@ -32,7 +31,6 @@ interface LoginPageProps {
 
 export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onOpenDisplay }) => {
   const {
-    loginAsRole,
     signIn,
     loading: authLoading,
     institutionsList,
@@ -54,7 +52,6 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onOpenDisp
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isExecutiveSubmitting, setIsExecutiveSubmitting] = useState(false);
 
   // School & Director Registration Form State
   const [schoolName, setSchoolName] = useState('');
@@ -119,31 +116,6 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onOpenDisp
       });
     } finally {
       setIsSubmitting(false);
-    }
-  };
-
-  // Executive Director Instant Verification
-  const handleExecutiveDirectorLogin = async () => {
-    setIsExecutiveSubmitting(true);
-    try {
-      if (selectedSchoolId) {
-        await switchInstitution(selectedSchoolId);
-      }
-      await loginAsRole('director', selectedSchoolId);
-      addToast({
-        title: 'Director Session Active',
-        message: 'Director governance portal accessed with executive authorization.',
-        type: 'success'
-      });
-      onLoginSuccess?.('director');
-    } catch (err: any) {
-      addToast({
-        title: 'Access Error',
-        message: err.message || 'Could not verify director credentials.',
-        type: 'error'
-      });
-    } finally {
-      setIsExecutiveSubmitting(false);
     }
   };
 
@@ -430,19 +402,6 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onOpenDisp
                   )}
                 </button>
               </form>
-
-              {/* Quick Director Login Button */}
-              <div className="pt-2 border-t border-slate-100">
-                <button
-                  type="button"
-                  onClick={handleExecutiveDirectorLogin}
-                  disabled={isExecutiveSubmitting || authLoading}
-                  className="w-full py-2 rounded-xl bg-purple-50 hover:bg-purple-100 text-purple-800 border border-purple-200/80 text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
-                >
-                  <UserCheck className="w-3.5 h-3.5 text-purple-600" />
-                  <span>{isExecutiveSubmitting ? 'Accessing...' : 'Quick Access: Director Console'}</span>
-                </button>
-              </div>
 
               {/* Register Callout */}
               <div className="text-center pt-1">

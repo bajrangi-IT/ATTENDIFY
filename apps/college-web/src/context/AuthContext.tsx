@@ -190,14 +190,48 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           try {
             const parsed = JSON.parse(storedUser);
 
-            // Check custom registered profiles first
-            const customProfiles: Profile[] = JSON.parse(localStorage.getItem('campusattend_custom_profiles') || '[]');
+            // 1. Try fetching freshest profile from Supabase first
+            let remoteProf: Profile | null = null;
+            if (parsed.profileId || parsed.email) {
+              try {
+                if (parsed.profileId) {
+                  const { data } = await supabase
+                    .from('profiles')
+                    .select('*')
+                    .eq('id', parsed.profileId)
+                    .maybeSingle();
+                  remoteProf = data;
+                }
+                if (!remoteProf && parsed.email) {
+                  const { data } = await supabase
+                    .from('profiles')
+                    .select('*')
+                    .ilike('email', parsed.email)
+                    .maybeSingle();
+                  remoteProf = data;
+                }
+              } catch (fetchErr) {
+                console.warn('Could not fetch remote profile on init:', fetchErr);
+              }
+            }
+
+            // 2. Check custom registered profiles in persistent local storage
+            const customProfiles: Profile[] = JSON.parse(
+              localStorage.getItem('campusattend_custom_profiles') || '[]'
+            );
             const matchedCustom = customProfiles.find(
-              (p) => (parsed.email && p.email.toLowerCase() === parsed.email.toLowerCase()) || (parsed.profileId && p.id === parsed.profileId)
+              (p) =>
+                (parsed.email && p.email.toLowerCase() === parsed.email.toLowerCase()) ||
+                (parsed.profileId && p.id === parsed.profileId)
             );
 
-            if (matchedCustom && mounted) {
-              await loadProfileDetails(matchedCustom, parsed.institutionId || matchedCustom.institution_id);
+            // Merge freshest available: prefer local updated details if custom, or remote
+            const activeProf = matchedCustom
+              ? { ...(remoteProf || {}), ...matchedCustom }
+              : remoteProf;
+
+            if (activeProf && mounted) {
+              await loadProfileDetails(activeProf, parsed.institutionId || activeProf.institution_id);
               setIsAuthenticated(true);
               setLoading(false);
               return;
@@ -525,6 +559,20 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         for (const dept of deptInserts) {
           await supabase.from('departments').insert(dept);
         }
+        // Also insert profile into supabase profiles table
+        await supabase.from('profiles').insert({
+          id: newProfile.id,
+          user_id: newProfile.user_id,
+          institution_id: newProfile.institution_id,
+          email: newProfile.email,
+          first_name: newProfile.first_name,
+          last_name: newProfile.last_name,
+          role: newProfile.role,
+          phone_number: newProfile.phone_number,
+          is_active: true,
+          created_at: newProfile.created_at,
+          updated_at: newProfile.updated_at,
+        });
       } catch (syncErr) {
         console.warn('Database remote sync notice (local registry active):', syncErr);
       }
@@ -592,20 +640,76 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const updateProfile = async (data: Partial<Profile>) => {
     if (!profile) return { error: 'No active profile' };
     try {
-      const { error } = await supabase
-        .from('profiles')
-        .update({
-          first_name: data.first_name,
-          last_name: data.last_name,
-          phone_number: data.phone_number,
-          avatar_url: data.avatar_url,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', profile.id);
+      // 1. Attempt Supabase profiles update
+      try {
+        await supabase
+          .from('profiles')
+          .update({
+            first_name: data.first_name,
+            last_name: data.last_name,
+            phone_number: data.phone_number,
+            avatar_url: data.avatar_url,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', profile.id);
+      } catch (dbErr) {
+        console.warn('Supabase profile remote sync note:', dbErr);
+      }
 
-      if (error) return { error: error.message };
+      // 2. Update active memory state
+      const updatedProfile: Profile = {
+        ...profile,
+        ...data,
+        updated_at: new Date().toISOString(),
+      };
+      setProfile(updatedProfile);
 
-      setProfile((prev) => (prev ? { ...prev, ...data } : null));
+      // 3. Update persistent localStorage caches so changes survive page refresh
+      try {
+        const customProfiles: (Profile & { password?: string })[] = JSON.parse(
+          localStorage.getItem('campusattend_custom_profiles') || '[]'
+        );
+        let found = false;
+        const updatedCustom = customProfiles.map((p) => {
+          if (p.id === profile.id || p.email.toLowerCase() === profile.email.toLowerCase()) {
+            found = true;
+            return {
+              ...p,
+              ...data,
+              updated_at: new Date().toISOString(),
+            };
+          }
+          return p;
+        });
+
+        if (!found) {
+          updatedCustom.unshift(updatedProfile);
+        }
+        localStorage.setItem('campusattend_custom_profiles', JSON.stringify(updatedCustom));
+
+        // 4. Update stored persona user object
+        const storedUser = localStorage.getItem('campusattend_auth_user');
+        if (storedUser) {
+          const parsed = JSON.parse(storedUser);
+          if (
+            (parsed.email && parsed.email.toLowerCase() === profile.email.toLowerCase()) ||
+            parsed.profileId === profile.id
+          ) {
+            localStorage.setItem(
+              'campusattend_auth_user',
+              JSON.stringify({
+                ...parsed,
+                first_name: data.first_name ?? parsed.first_name,
+                last_name: data.last_name ?? parsed.last_name,
+                phone_number: data.phone_number ?? parsed.phone_number,
+              })
+            );
+          }
+        }
+      } catch (storageErr) {
+        console.warn('LocalStorage profile cache update failed:', storageErr);
+      }
+
       return { success: true };
     } catch (err: any) {
       return { error: err.message };
