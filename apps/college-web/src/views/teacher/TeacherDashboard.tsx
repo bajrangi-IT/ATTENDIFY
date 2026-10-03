@@ -12,7 +12,9 @@ import {
   AlertTriangle,
   Play,
   ArrowRight,
-  TrendingUp
+  TrendingUp,
+  UserCheck,
+  BarChart3
 } from 'lucide-react';
 import { Skeleton } from '../../components/ui/Skeleton';
 
@@ -33,6 +35,8 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
   const [loading, setLoading] = useState(true);
   const [assignedSubjects, setAssignedSubjects] = useState<any[]>([]);
   const [todaySchedule, setTodaySchedule] = useState<any[]>([]);
+  const [coordinatedSection, setCoordinatedSection] = useState<any | null>(null);
+  const [coordinatedStudentsCount, setCoordinatedStudentsCount] = useState<number>(0);
   const [stats, setStats] = useState({
     totalClassesHeld: 0,
     averageAttendanceRate: 0,
@@ -124,6 +128,30 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
           studentsAtRisk: risk,
           activeSessionId: active,
         });
+
+        // 4. Fetch Coordinated Class (Class Incharge) for this faculty member
+        if (facultyRecord?.id) {
+          const { data: coordSec } = await supabase
+            .from('sections')
+            .select(`
+              id, name, capacity,
+              semester:semesters(id, semester_number, program:programs(name, code, department:departments(name)))
+            `)
+            .eq('class_coordinator_id', facultyRecord.id)
+            .maybeSingle();
+
+          if (coordSec) {
+            setCoordinatedSection(coordSec);
+            const { count } = await supabase
+              .from('students')
+              .select('id', { count: 'exact', head: true })
+              .eq('current_section_id', coordSec.id);
+            setCoordinatedStudentsCount(count || 0);
+          } else {
+            setCoordinatedSection(null);
+            setCoordinatedStudentsCount(0);
+          }
+        }
       } catch (err: any) {
         console.error('Error loading teacher dashboard data:', err);
         toast.error('Failed to load dashboard', err.message);
@@ -314,6 +342,45 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
           </button>
         </div>
       </div>
+
+      {/* Coordinated Class Banner (Class Incharge) */}
+      {coordinatedSection && (
+        <div className="bg-gradient-to-r from-purple-900 via-indigo-950 to-slate-900 rounded-2xl p-5 text-white shadow-lg border border-purple-500/30 flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="flex items-start gap-3.5">
+            <div className="p-3 bg-purple-500/20 border border-purple-400/30 rounded-xl text-purple-200">
+              <UserCheck className="h-6 w-6 text-purple-300" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider bg-purple-400 text-purple-950 font-mono">
+                  Official Class Coordinator
+                </span>
+                <span className="text-xs text-purple-200 font-semibold">
+                  {Math.ceil((coordinatedSection.semester?.semester_number || 1) / 2)}th Year (Sem {coordinatedSection.semester?.semester_number})
+                </span>
+              </div>
+              <h2 className="text-base font-black text-white mt-1">
+                Class Incharge: Section {coordinatedSection.name}
+              </h2>
+              <p className="text-xs text-purple-200/80 mt-0.5">
+                {coordinatedSection.semester?.program?.name || coordinatedSection.semester?.program?.code || 'Degree'} • {coordinatedStudentsCount} Enrolled Students • Capacity: {coordinatedSection.capacity}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 self-start md:self-auto">
+            {onNavigateToReports && (
+              <button
+                onClick={onNavigateToReports}
+                className="px-3.5 py-2 bg-white/10 hover:bg-white/20 text-white border border-white/20 text-xs font-bold rounded-xl transition flex items-center gap-1.5 cursor-pointer"
+              >
+                <BarChart3 className="h-4 w-4 text-purple-300" />
+                <span>Class Attendance Report</span>
+              </button>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* KPI Stats */}
       <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">

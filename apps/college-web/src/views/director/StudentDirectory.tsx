@@ -42,6 +42,7 @@ interface StudentDirectoryItem {
   registration_number: string;
   batch_year: number;
   enrollment_status: string;
+  branch?: string;
   first_name: string;
   last_name: string;
   full_name: string;
@@ -79,6 +80,7 @@ export const StudentDirectory: React.FC = () => {
   const [selectedProgramId, setSelectedProgramId] = useState<string>('');
   const [selectedSemesterId, setSelectedSemesterId] = useState<string>('');
   const [selectedSectionId, setSelectedSectionId] = useState<string>('');
+  const [selectedBranch, setSelectedBranch] = useState<string>('');
   const [selectedThreshold, setSelectedThreshold] = useState<string>('');
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
@@ -98,6 +100,7 @@ export const StudentDirectory: React.FC = () => {
   const [newRollNumber, setNewRollNumber] = useState('');
   const [newRegNumber, setNewRegNumber] = useState('');
   const [newSectionId, setNewSectionId] = useState('');
+  const [newBranch, setNewBranch] = useState('CSE');
   const [newBatchYear, setNewBatchYear] = useState(new Date().getFullYear());
   const [newPhone, setNewPhone] = useState('');
   const [newPassword, setNewPassword] = useState('CampusPass2026!');
@@ -113,6 +116,7 @@ export const StudentDirectory: React.FC = () => {
   const [editRegNumber, setEditRegNumber] = useState('');
   const [editBatchYear, setEditBatchYear] = useState(2023);
   const [editSectionId, setEditSectionId] = useState('');
+  const [editBranch, setEditBranch] = useState('CSE');
   const [editPhone, setEditPhone] = useState('');
   const [editSubmitting, setEditSubmitting] = useState(false);
 
@@ -237,7 +241,7 @@ export const StudentDirectory: React.FC = () => {
       let query = supabase
         .from('students')
         .select(`
-          id, roll_number, registration_number, batch_year, enrollment_status,
+          id, roll_number, registration_number, batch_year, enrollment_status, branch,
           profile:profiles(id, first_name, last_name, email, phone_number, is_active),
           current_section:sections(
             id, name,
@@ -254,6 +258,9 @@ export const StudentDirectory: React.FC = () => {
 
       if (selectedSectionId) {
         query = query.eq('current_section_id', selectedSectionId);
+      }
+      if (selectedBranch) {
+        query = query.eq('branch', selectedBranch);
       }
       if (searchTerm.trim()) {
         const q = `%${searchTerm.trim()}%`;
@@ -305,6 +312,7 @@ export const StudentDirectory: React.FC = () => {
           registration_number: st.registration_number,
           batch_year: st.batch_year,
           enrollment_status: st.enrollment_status,
+          branch: st.branch || 'CSE',
           first_name: st.profile?.first_name || '',
           last_name: st.profile?.last_name || '',
           full_name: `${st.profile?.first_name || ''} ${st.profile?.last_name || ''}`.trim(),
@@ -418,6 +426,7 @@ export const StudentDirectory: React.FC = () => {
         p_section_id: newSectionId,
         p_batch_year: Number(newBatchYear),
         p_registration_number: (newRegNumber.trim() || newRollNumber.trim()).toUpperCase(),
+        p_branch: newBranch || 'CSE',
         p_phone: newPhone.trim() || null,
         p_password: newPassword.trim() || 'CampusPass2026!'
       });
@@ -425,7 +434,7 @@ export const StudentDirectory: React.FC = () => {
       if (error) throw error;
       if (!data.success) throw new Error(data.error);
 
-      toast.success('Student Enrolled', `${newFirstName} ${newLastName} enrolled with login credentials.`);
+      toast.success('Student Enrolled', `${newFirstName} ${newLastName} (${newBranch}) enrolled with login credentials.`);
       setShowCreateModal(false);
       setNewFirstName('');
       setNewLastName('');
@@ -433,6 +442,7 @@ export const StudentDirectory: React.FC = () => {
       setNewRollNumber('');
       setNewRegNumber('');
       setNewPhone('');
+      setNewBranch('CSE');
       setNewPassword('CampusPass2026!');
       fetchStudents();
     } catch (err: any) {
@@ -452,6 +462,7 @@ export const StudentDirectory: React.FC = () => {
     setEditRegNumber(st.registration_number || st.roll_number);
     setEditBatchYear(st.batch_year);
     setEditSectionId(st.section_id);
+    setEditBranch(st.branch || 'CSE');
     setEditPhone(st.phone || '');
   };
 
@@ -475,6 +486,9 @@ export const StudentDirectory: React.FC = () => {
 
       if (error) throw error;
       if (!data.success) throw new Error(data.error);
+
+      // Update branch in students table
+      await supabase.from('students').update({ branch: editBranch || 'CSE' }).eq('id', editingStudent.student_id);
 
       toast.success('Student Record Updated', `${editFirstName} ${editLastName} updated.`);
       setEditingStudent(null);
@@ -741,11 +755,16 @@ export const StudentDirectory: React.FC = () => {
                 <option value="">All Semesters</option>
                 {semesters
                   .filter((s) => !selectedProgramId || s.program_id === selectedProgramId)
-                  .map((s) => (
-                    <option key={s.id} value={s.id}>
-                      Semester {s.semester_number}
-                    </option>
-                  ))}
+                  .map((s) => {
+                    const y = Math.ceil(s.semester_number / 2);
+                    const yNames = ['1st Year', '2nd Year', '3rd Year', '4th Year'];
+                    const yLabel = yNames[y - 1] || `Year ${y}`;
+                    return (
+                      <option key={s.id} value={s.id}>
+                        {yLabel} • Semester {s.semester_number}
+                      </option>
+                    );
+                  })}
               </select>
             </div>
 
@@ -768,6 +787,24 @@ export const StudentDirectory: React.FC = () => {
                   ))}
               </select>
             </div>
+
+            <div>
+              <select
+                value={selectedBranch}
+                onChange={(e) => {
+                  setSelectedBranch(e.target.value);
+                  setCurrentPage(1);
+                }}
+                className="w-full py-1.5 px-2.5 bg-white border border-slate-200 rounded-lg text-[11px] font-semibold text-slate-600 cursor-pointer"
+              >
+                <option value="">All Branches</option>
+                <option value="CSE">CSE (Computer Science)</option>
+                <option value="CS">CS (Pure CS)</option>
+                <option value="DS">DS (Data Science)</option>
+                <option value="AI/ML">AI / ML (Artificial Intel.)</option>
+                <option value="IT">IT (Information Tech)</option>
+              </select>
+            </div>
           </div>
         </div>
 
@@ -787,32 +824,49 @@ export const StudentDirectory: React.FC = () => {
                 <tr>
                   <th className="py-3 px-4">Student</th>
                   <th className="py-3 px-4">Roll & Reg No.</th>
-                  <th className="py-3 px-4">Class & Section</th>
+                  <th className="py-3 px-4">Class, Section & Branch</th>
                   <th className="py-3 px-4 text-center">Attendance Gauge</th>
                   <th className="py-3 px-4">Status</th>
                   <th className="py-3 px-4 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {students.map((st) => (
-                  <tr key={st.student_id} className="hover:bg-slate-50/80 transition-colors">
-                    <td className="py-3 px-4">
-                      <div className="font-bold text-slate-900">{st.full_name}</div>
-                      <div className="text-[11px] text-slate-400 flex items-center gap-1 mt-0.5">
-                        <Mail className="h-3 w-3" /> {st.email}
-                      </div>
-                    </td>
-                    <td className="py-3 px-4 font-mono">
-                      <div className="font-bold text-indigo-700">{st.roll_number}</div>
-                      <div className="text-[10px] text-slate-400">{st.registration_number}</div>
-                    </td>
-                    <td className="py-3 px-4">
-                      <div className="font-semibold text-slate-800">
-                        {st.program_name} • Sem {st.semester_number}
-                      </div>
-                      <div className="text-[11px] text-indigo-600 font-bold">Section {st.section_name}</div>
-                    </td>
-                    <td className="py-3 px-4 text-center">
+                {students.map((st) => {
+                  const semNum = st.semester_number || 1;
+                  const yearNum = Math.ceil(semNum / 2);
+                  const yNames = ['1st Year', '2nd Year', '3rd Year', '4th Year'];
+                  const yearLabel = yNames[yearNum - 1] || `Year ${yearNum}`;
+
+                  return (
+                    <tr key={st.student_id} className="hover:bg-slate-50/80 transition-colors">
+                      <td className="py-3 px-4">
+                        <div className="font-bold text-slate-900">{st.full_name}</div>
+                        <div className="text-[11px] text-slate-400 flex items-center gap-1 mt-0.5">
+                          <Mail className="h-3 w-3" /> {st.email}
+                        </div>
+                      </td>
+                      <td className="py-3 px-4 font-mono">
+                        <div className="font-bold text-indigo-700">{st.roll_number}</div>
+                        <div className="text-[10px] text-slate-400">{st.registration_number}</div>
+                      </td>
+                      <td className="py-3 px-4">
+                        <div className="font-semibold text-slate-800 flex items-center gap-1.5">
+                          <span>{yearLabel} • Sem {semNum}</span>
+                          <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider ${
+                            st.branch === 'DS' ? 'bg-purple-100 text-purple-800 border border-purple-200' :
+                            st.branch === 'CS' ? 'bg-blue-100 text-blue-800 border border-blue-200' :
+                            st.branch === 'AI/ML' ? 'bg-amber-100 text-amber-800 border border-amber-200' :
+                            st.branch === 'IT' ? 'bg-cyan-100 text-cyan-800 border border-cyan-200' :
+                            'bg-indigo-100 text-indigo-800 border border-indigo-200'
+                          }`}>
+                            {st.branch || 'CSE'}
+                          </span>
+                        </div>
+                        <div className="text-[11px] text-slate-500 font-medium mt-0.5">
+                          {st.program_name} • <span className="font-bold text-indigo-600">Section {st.section_name}</span>
+                        </div>
+                      </td>
+                      <td className="py-3 px-4 text-center">
                       <div className="inline-flex flex-col items-center">
                         <span
                           className={`font-black text-xs ${
@@ -899,7 +953,8 @@ export const StudentDirectory: React.FC = () => {
                       </div>
                     </td>
                   </tr>
-                ))}
+                    );
+                  })}
               </tbody>
             </table>
           </div>
@@ -972,19 +1027,33 @@ export const StudentDirectory: React.FC = () => {
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-3 gap-3">
             <div>
               <label className="text-[11px] font-bold text-slate-600">Class Section *</label>
               <select
                 value={newSectionId}
                 onChange={(e) => setNewSectionId(e.target.value)}
-                className="w-full mt-1 p-2 text-xs border border-slate-300 rounded-xl bg-white focus:ring-2 focus:ring-indigo-500"
+                className="w-full mt-1 p-2 text-xs border border-slate-300 rounded-xl bg-white focus:ring-2 focus:ring-indigo-500 font-medium"
               >
                 {sections.map((sec) => (
                   <option key={sec.id} value={sec.id}>
                     {sec.name}
                   </option>
                 ))}
+              </select>
+            </div>
+            <div>
+              <label className="text-[11px] font-bold text-slate-600">Branch / Stream *</label>
+              <select
+                value={newBranch}
+                onChange={(e) => setNewBranch(e.target.value)}
+                className="w-full mt-1 p-2 text-xs border border-slate-300 rounded-xl bg-white focus:ring-2 focus:ring-indigo-500 font-bold text-indigo-900"
+              >
+                <option value="CSE">CSE (Computer Science)</option>
+                <option value="CS">CS (Pure CS)</option>
+                <option value="DS">DS (Data Science)</option>
+                <option value="AI/ML">AI / ML</option>
+                <option value="IT">IT (Information Tech)</option>
               </select>
             </div>
             <div>
@@ -1136,7 +1205,7 @@ export const StudentDirectory: React.FC = () => {
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-3 gap-3">
             <div>
               <label className="text-[11px] font-bold text-slate-600">Section</label>
               <select
@@ -1149,6 +1218,20 @@ export const StudentDirectory: React.FC = () => {
                     {sec.name}
                   </option>
                 ))}
+              </select>
+            </div>
+            <div>
+              <label className="text-[11px] font-bold text-slate-600">Branch</label>
+              <select
+                value={editBranch}
+                onChange={(e) => setEditBranch(e.target.value)}
+                className="w-full mt-1 p-2 text-xs border border-slate-300 rounded-xl bg-white font-bold text-indigo-900"
+              >
+                <option value="CSE">CSE (Computer Science)</option>
+                <option value="CS">CS (Pure CS)</option>
+                <option value="DS">DS (Data Science)</option>
+                <option value="AI/ML">AI / ML</option>
+                <option value="IT">IT (Information Tech)</option>
               </select>
             </div>
             <div>

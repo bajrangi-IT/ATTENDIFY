@@ -20,7 +20,9 @@ import {
   Edit,
   Tag,
   DoorOpen,
-  LayoutGrid
+  LayoutGrid,
+  UserCheck,
+  UserPlus
 } from 'lucide-react';
 
 export const AcademicSetup: React.FC = () => {
@@ -84,6 +86,13 @@ export const AcademicSetup: React.FC = () => {
   const [sectionName, setSectionName] = useState('');
   const [sectionSemesterId, setSectionSemesterId] = useState('');
   const [sectionCapacity, setSectionCapacity] = useState(70);
+  const [sectionCoordinatorId, setSectionCoordinatorId] = useState('');
+
+  // Class Coordinator Assign Modal
+  const [showAssignCoordinatorModal, setShowAssignCoordinatorModal] = useState(false);
+  const [assigningSection, setAssigningSection] = useState<any | null>(null);
+  const [targetCoordinatorId, setTargetCoordinatorId] = useState('');
+  const [facultyList, setFacultyList] = useState<any[]>([]);
 
   // Offering Modal
   const [showOfferingModal, setShowOfferingModal] = useState(false);
@@ -195,12 +204,16 @@ export const AcademicSetup: React.FC = () => {
 
       const semIds = semList.map((s: any) => s.id);
 
-      // 4. Fetch sections strictly belonging to this institution's semesters
+      // 4. Fetch sections strictly belonging to this institution's semesters with coordinator
       let secList: any[] = [];
       if (semIds.length > 0) {
         const { data: secs, error: sErr } = await supabase
           .from('sections')
-          .select('*, semester:semesters(semester_number, program:programs(name, code))')
+          .select(`
+            *,
+            semester:semesters(semester_number, program:programs(name, code)),
+            coordinator:faculty!sections_class_coordinator_id_fkey(id, employee_code, designation, profile:profiles(first_name, last_name, email))
+          `)
           .in('semester_id', semIds)
           .order('name');
         if (sErr) throw sErr;
@@ -232,6 +245,14 @@ export const AcademicSetup: React.FC = () => {
           .order('room_number');
         roomList = rooms || [];
       }
+
+      // 7. Fetch faculty members strictly belonging to this institution for Class Coordinator roles
+      const { data: facs } = await supabase
+        .from('faculty')
+        .select('id, employee_code, designation, profile:profiles(first_name, last_name, email)')
+        .eq('institution_id', instId)
+        .order('employee_code');
+      setFacultyList(facs || []);
 
       setDepartments(deptList);
       setPrograms(progList);
@@ -448,10 +469,24 @@ export const AcademicSetup: React.FC = () => {
     }
   };
 
+  const handleOpenYearModal = () => {
+    const curYear = new Date().getFullYear();
+    setYearName(`${curYear}-${curYear + 1}`);
+    setYearStartDate(`${curYear}-08-01`);
+    setYearEndDate(`${curYear + 1}-06-30`);
+    setYearIsCurrent(academicYears.length === 0);
+    setShowYearModal(true);
+  };
+
   const handleCreateAcademicYear = async (e: React.FormEvent) => {
     e.preventDefault();
     const instId = profile?.institution_id || currentInstitutionId || DEFAULT_INSTITUTION_ID;
     try {
+      if (yearIsCurrent) {
+        // Unset any existing active years
+        await supabase.from('academic_years').update({ is_current: false }).eq('institution_id', instId);
+      }
+
       const { error } = await supabase.from('academic_years').insert({
         institution_id: instId,
         name: yearName.trim(),
@@ -470,6 +505,20 @@ export const AcademicSetup: React.FC = () => {
     }
   };
 
+  const handleSetActiveYear = async (yearId: string) => {
+    const instId = profile?.institution_id || currentInstitutionId || DEFAULT_INSTITUTION_ID;
+    try {
+      await supabase.from('academic_years').update({ is_current: false }).eq('institution_id', instId);
+      const { error } = await supabase.from('academic_years').update({ is_current: true }).eq('id', yearId);
+      if (error) throw error;
+
+      toast.success('Active Term Updated', 'Set as currently running academic term.');
+      fetchData();
+    } catch (err: any) {
+      toast.error('Failed to set active term', err.message);
+    }
+  };
+
   const handleCreateSection = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
@@ -485,16 +534,37 @@ export const AcademicSetup: React.FC = () => {
       const { error } = await supabase.from('sections').insert({
         semester_id: semId,
         name: sectionName.trim(),
-        capacity: Number(sectionCapacity)
+        capacity: Number(sectionCapacity),
+        class_coordinator_id: sectionCoordinatorId || null
       });
       if (error) throw error;
 
       toast.success('Class / Section Created', `${sectionName} added to semester.`);
       setShowSectionModal(false);
       setSectionName('');
+      setSectionCoordinatorId('');
       fetchData();
     } catch (err: any) {
       toast.error('Failed to create section', err.message);
+    }
+  };
+
+  const handleAssignCoordinator = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!assigningSection) return;
+    try {
+      const { error } = await supabase
+        .from('sections')
+        .update({ class_coordinator_id: targetCoordinatorId || null })
+        .eq('id', assigningSection.id);
+      if (error) throw error;
+
+      toast.success('Class Coordinator Updated', targetCoordinatorId ? 'Assigned faculty as class incharge.' : 'Removed class coordinator.');
+      setShowAssignCoordinatorModal(false);
+      setAssigningSection(null);
+      fetchData();
+    } catch (err: any) {
+      toast.error('Failed to assign coordinator', err.message);
     }
   };
 
@@ -730,15 +800,62 @@ export const AcademicSetup: React.FC = () => {
               </div>
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                {sections.map((sec) => (
-                  <div key={sec.id} className="p-4 bg-slate-50 border border-slate-200 rounded-xl hover:border-purple-300 transition-all">
-                    <span className="text-xs font-bold text-purple-700">
-                      {sec.semester?.program?.name || sec.semester?.program?.code || 'Degree'} (Sem {sec.semester?.semester_number})
-                    </span>
-                    <h3 className="font-bold text-sm text-slate-900 mt-0.5">{sec.name}</h3>
-                    <p className="text-[11px] text-slate-500 mt-1">Capacity: {sec.capacity} Enrolled Students</p>
-                  </div>
-                ))}
+                {sections.map((sec) => {
+                  const semNum = sec.semester?.semester_number || 1;
+                  const yearNum = Math.ceil(semNum / 2);
+                  const yearSuffixes = ['1st Year', '2nd Year', '3rd Year', '4th Year', '5th Year'];
+                  const yearLabel = yearSuffixes[yearNum - 1] || `Year ${yearNum}`;
+                  const coordinatorName = sec.coordinator?.profile
+                    ? `${sec.coordinator.profile.first_name} ${sec.coordinator.profile.last_name}`
+                    : null;
+
+                  return (
+                    <div key={sec.id} className="p-4 bg-slate-50 border border-slate-200 rounded-xl hover:border-purple-300 transition-all flex flex-col justify-between">
+                      <div>
+                        <div className="flex items-center justify-between gap-1 mb-1">
+                          <span className="px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider bg-purple-100 text-purple-800 border border-purple-200">
+                            {yearLabel} • Sem {semNum}
+                          </span>
+                          <span className="text-[11px] text-slate-400 font-mono">Cap: {sec.capacity}</span>
+                        </div>
+                        <h3 className="font-bold text-base text-slate-900 mt-1">{sec.name}</h3>
+                        <p className="text-xs text-slate-500 font-medium">
+                          {sec.semester?.program?.name || sec.semester?.program?.code || 'Degree Program'}
+                        </p>
+                      </div>
+
+                      {/* Class Coordinator Display & Quick Assign */}
+                      <div className="mt-3 pt-2.5 border-t border-slate-200 flex items-center justify-between">
+                        <div className="min-w-0 pr-2">
+                          <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Class Coordinator</p>
+                          {coordinatorName ? (
+                            <p className="text-xs font-bold text-emerald-800 flex items-center gap-1 mt-0.5 truncate" title={coordinatorName}>
+                              <UserCheck className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
+                              <span className="truncate">{coordinatorName}</span>
+                            </p>
+                          ) : (
+                            <p className="text-xs text-amber-600 font-medium italic flex items-center gap-1 mt-0.5">
+                              Not Assigned
+                            </p>
+                          )}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setAssigningSection(sec);
+                            setTargetCoordinatorId(sec.class_coordinator_id || '');
+                            setShowAssignCoordinatorModal(true);
+                          }}
+                          className="px-2 py-1 bg-white hover:bg-indigo-50 text-indigo-600 border border-slate-200 hover:border-indigo-300 rounded-lg text-[11px] font-bold shrink-0 transition-colors flex items-center gap-1 shadow-sm"
+                          title="Assign or change class coordinator"
+                        >
+                          <UserPlus className="h-3 w-3" />
+                          {coordinatorName ? 'Change' : 'Assign'}
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>
@@ -909,7 +1026,7 @@ export const AcademicSetup: React.FC = () => {
               <p className="text-xs text-slate-500">Institutional session calendars and term boundaries.</p>
             </div>
             <button
-              onClick={() => setShowYearModal(true)}
+              onClick={handleOpenYearModal}
               className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl shadow-sm flex items-center gap-1.5"
             >
               <Plus className="h-4 w-4" /> Add Academic Year
@@ -918,21 +1035,33 @@ export const AcademicSetup: React.FC = () => {
 
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
             {academicYears.map((ay) => (
-              <div key={ay.id} className="p-4 bg-slate-50 border border-slate-200 rounded-xl relative">
-                {ay.is_current && (
-                  <span className="absolute top-3 right-3 px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-100 text-emerald-800 border border-emerald-300">
-                    Current Term
-                  </span>
-                )}
-                <h3 className="font-bold text-base text-slate-900">{ay.name}</h3>
-                <div className="text-xs text-slate-500 mt-2 space-y-1">
-                  <div className="flex items-center gap-1.5">
-                    <Calendar className="h-3.5 w-3.5 text-slate-400" /> Start: {ay.start_date}
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <Clock className="h-3.5 w-3.5 text-slate-400" /> End: {ay.end_date}
+              <div key={ay.id} className="p-4 bg-slate-50 border border-slate-200 rounded-xl relative flex flex-col justify-between">
+                <div>
+                  {ay.is_current && (
+                    <span className="absolute top-3 right-3 px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-100 text-emerald-800 border border-emerald-300">
+                      Current Active Term
+                    </span>
+                  )}
+                  <h3 className="font-bold text-base text-slate-900">{ay.name}</h3>
+                  <div className="text-xs text-slate-500 mt-2 space-y-1">
+                    <div className="flex items-center gap-1.5">
+                      <Calendar className="h-3.5 w-3.5 text-slate-400" /> Start: {ay.start_date}
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <Clock className="h-3.5 w-3.5 text-slate-400" /> End: {ay.end_date}
+                    </div>
                   </div>
                 </div>
+
+                {!ay.is_current && (
+                  <button
+                    type="button"
+                    onClick={() => handleSetActiveYear(ay.id)}
+                    className="mt-3 w-full py-1.5 px-3 bg-white hover:bg-emerald-50 text-emerald-700 border border-slate-200 hover:border-emerald-300 rounded-lg text-xs font-bold transition-colors"
+                  >
+                    Set as Current Term
+                  </button>
+                )}
               </div>
             ))}
           </div>
@@ -1359,6 +1488,25 @@ export const AcademicSetup: React.FC = () => {
               className="w-full text-xs p-2.5 rounded-xl border border-slate-300 mt-1"
             />
           </div>
+          <div>
+            <label className="text-xs font-bold text-slate-700">Class Coordinator (Faculty Incharge)</label>
+            <select
+              value={sectionCoordinatorId}
+              onChange={(e) => setSectionCoordinatorId(e.target.value)}
+              className="w-full text-xs p-2.5 rounded-xl border border-slate-300 mt-1 bg-white font-medium text-slate-800"
+            >
+              <option value="">-- No Coordinator Assigned (Optional) --</option>
+              {facultyList.map((f) => {
+                const name = f.profile ? `${f.profile.first_name} ${f.profile.last_name}` : f.employee_code;
+                return (
+                  <option key={f.id} value={f.id}>
+                    {name} ({f.employee_code}{f.designation ? ` • ${f.designation}` : ''})
+                  </option>
+                );
+              })}
+            </select>
+            <p className="text-[10px] text-slate-400 mt-0.5">Faculty member assigned to oversee this specific class & attendance.</p>
+          </div>
           <div className="pt-2 flex justify-end gap-2">
             <button
               type="button"
@@ -1373,6 +1521,131 @@ export const AcademicSetup: React.FC = () => {
               className="px-4 py-2 bg-purple-600 disabled:opacity-50 text-white text-xs font-bold rounded-xl hover:bg-purple-700"
             >
               Create Class / Section
+            </button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Assign Class Coordinator Modal */}
+      <Modal
+        isOpen={showAssignCoordinatorModal}
+        onClose={() => {
+          setShowAssignCoordinatorModal(false);
+          setAssigningSection(null);
+        }}
+        title={`Assign Class Coordinator — ${assigningSection?.name || 'Class'}`}
+      >
+        <form onSubmit={handleAssignCoordinator} className="space-y-4">
+          <div className="p-3 bg-purple-50 border border-purple-200 rounded-xl text-xs text-purple-900">
+            <p className="font-bold">
+              Class: {assigningSection?.name} ({assigningSection?.semester?.program?.name || 'Degree Program'})
+            </p>
+            <p className="text-[11px] text-purple-700 mt-0.5">
+              The assigned faculty member will oversee this class's attendance registers, defaulters, and curricular reports.
+            </p>
+          </div>
+
+          <div>
+            <label className="text-xs font-bold text-slate-700">Select Faculty Incharge</label>
+            <select
+              value={targetCoordinatorId}
+              onChange={(e) => setTargetCoordinatorId(e.target.value)}
+              className="w-full text-xs p-2.5 rounded-xl border border-slate-300 mt-1 bg-white font-medium text-slate-800"
+            >
+              <option value="">-- No Coordinator (Unassigned) --</option>
+              {facultyList.map((f) => {
+                const name = f.profile ? `${f.profile.first_name} ${f.profile.last_name}` : f.employee_code;
+                return (
+                  <option key={f.id} value={f.id}>
+                    {name} ({f.employee_code}{f.designation ? ` • ${f.designation}` : ''})
+                  </option>
+                );
+              })}
+            </select>
+          </div>
+
+          <div className="pt-2 flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                setShowAssignCoordinatorModal(false);
+                setAssigningSection(null);
+              }}
+              className="px-4 py-2 border border-slate-200 text-slate-600 text-xs font-bold rounded-xl"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl"
+            >
+              Save Class Coordinator
+            </button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Academic Year Modal */}
+      <Modal isOpen={showYearModal} onClose={() => setShowYearModal(false)} title="Add Academic Year & Term">
+        <form onSubmit={handleCreateAcademicYear} className="space-y-4">
+          <div>
+            <label className="text-xs font-bold text-slate-700">Academic Session Name *</label>
+            <input
+              required
+              type="text"
+              placeholder="e.g. 2026-2027 or 2025-2026"
+              value={yearName}
+              onChange={(e) => setYearName(e.target.value)}
+              className="w-full text-xs p-2.5 rounded-xl border border-slate-300 mt-1 font-medium"
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs font-bold text-slate-700">Start Date *</label>
+              <input
+                required
+                type="date"
+                value={yearStartDate}
+                onChange={(e) => setYearStartDate(e.target.value)}
+                className="w-full text-xs p-2.5 rounded-xl border border-slate-300 mt-1"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-bold text-slate-700">End Date *</label>
+              <input
+                required
+                type="date"
+                value={yearEndDate}
+                onChange={(e) => setYearEndDate(e.target.value)}
+                className="w-full text-xs p-2.5 rounded-xl border border-slate-300 mt-1"
+              />
+            </div>
+          </div>
+          <div className="flex items-center gap-2 pt-1">
+            <input
+              type="checkbox"
+              id="yearIsCurrent"
+              checked={yearIsCurrent}
+              onChange={(e) => setYearIsCurrent(e.target.checked)}
+              className="rounded text-indigo-600 focus:ring-indigo-500 h-4 w-4"
+            />
+            <label htmlFor="yearIsCurrent" className="text-xs font-semibold text-slate-700 cursor-pointer">
+              Set as Current Active Session for this School
+            </label>
+          </div>
+          <div className="pt-2 flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => setShowYearModal(false)}
+              className="px-4 py-2 border border-slate-200 text-slate-600 text-xs font-bold rounded-xl"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl"
+            >
+              Create Academic Year
             </button>
           </div>
         </form>

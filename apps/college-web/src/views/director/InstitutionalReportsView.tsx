@@ -66,6 +66,7 @@ interface StudentAttendanceRow {
   roll_number: string;
   registration_number?: string;
   student_name: string;
+  branch?: string;
   email?: string;
   phone?: string;
   department_name: string;
@@ -118,6 +119,7 @@ export const InstitutionalReportsView: React.FC = () => {
   const [sortOrder, setSortOrder] = useState<SortOrder>('asc');
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'regular' | 'shortage'>('all');
+  const [selectedBranchFilter, setSelectedBranchFilter] = useState<string>('all');
 
   const activeInstitutionId = profile?.institution_id || currentInstitutionId || '00000000-0000-0000-0000-000000000001';
 
@@ -320,6 +322,7 @@ export const InstitutionalReportsView: React.FC = () => {
           roll_number,
           registration_number,
           enrollment_status,
+          branch,
           profile:profiles(id, first_name, last_name, email, phone_number)
         `)
         .eq('institution_id', activeInstitutionId)
@@ -401,6 +404,7 @@ export const InstitutionalReportsView: React.FC = () => {
           roll_number: st.roll_number || 'N/A',
           registration_number: st.registration_number,
           student_name: `${st.profile?.first_name || ''} ${st.profile?.last_name || ''}`.trim() || 'Unknown Student',
+          branch: st.branch || 'CSE',
           email: st.profile?.email,
           phone: st.profile?.phone_number,
           department_name: currentDept?.name || 'Department',
@@ -454,6 +458,11 @@ export const InstitutionalReportsView: React.FC = () => {
       result = result.filter((r) => r.threshold_status !== 'regular');
     }
 
+    // Branch filter
+    if (selectedBranchFilter !== 'all') {
+      result = result.filter((r) => (r.branch || 'CSE') === selectedBranchFilter);
+    }
+
     // Text Search
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
@@ -484,7 +493,7 @@ export const InstitutionalReportsView: React.FC = () => {
     });
 
     return result;
-  }, [attendanceData, statusFilter, searchQuery, sortField, sortOrder]);
+  }, [attendanceData, statusFilter, selectedBranchFilter, searchQuery, sortField, sortOrder]);
 
   // Aggregate Metrics for Header Cards
   const stats = useMemo(() => {
@@ -725,9 +734,11 @@ export const InstitutionalReportsView: React.FC = () => {
               </option>
               {semesters.map((sem) => {
                 const yearNum = Math.ceil(sem.semester_number / 2);
+                const yearLabels = ['1st Year', '2nd Year', '3rd Year', '4th Year', '5th Year'];
+                const yearLabel = yearLabels[yearNum - 1] || `Year ${yearNum}`;
                 return (
                   <option key={sem.id} value={sem.id}>
-                    Semester {sem.semester_number} (Year {yearNum})
+                    {yearLabel} • Semester {sem.semester_number}
                   </option>
                 );
               })}
@@ -907,6 +918,20 @@ export const InstitutionalReportsView: React.FC = () => {
                   Shortage ({stats.shortage})
                 </button>
               </div>
+
+              {/* Branch Filter Dropdown */}
+              <select
+                value={selectedBranchFilter}
+                onChange={(e) => setSelectedBranchFilter(e.target.value)}
+                className="py-1 px-2.5 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-700 cursor-pointer"
+              >
+                <option value="all">All Branches</option>
+                <option value="CSE">Branch: CSE</option>
+                <option value="CS">Branch: CS</option>
+                <option value="DS">Branch: DS</option>
+                <option value="AI/ML">Branch: AI / ML</option>
+                <option value="IT">Branch: IT</option>
+              </select>
             </div>
 
             <div className="text-xs text-slate-500 font-medium">
@@ -1018,9 +1043,20 @@ export const InstitutionalReportsView: React.FC = () => {
                         {st.roll_number}
                       </td>
 
-                      {/* Student Name */}
+                      {/* Student Name & Branch */}
                       <td className="py-3 px-4">
-                        <div className="font-bold text-slate-900">{st.student_name}</div>
+                        <div className="font-bold text-slate-900 flex items-center gap-1.5">
+                          <span>{st.student_name}</span>
+                          <span className={`px-1.5 py-0.2 rounded text-[9px] font-black uppercase tracking-wider ${
+                            st.branch === 'DS' ? 'bg-purple-100 text-purple-800 border border-purple-200' :
+                            st.branch === 'CS' ? 'bg-blue-100 text-blue-800 border border-blue-200' :
+                            st.branch === 'AI/ML' ? 'bg-amber-100 text-amber-800 border border-amber-200' :
+                            st.branch === 'IT' ? 'bg-cyan-100 text-cyan-800 border border-cyan-200' :
+                            'bg-indigo-100 text-indigo-800 border border-indigo-200'
+                          }`}>
+                            {st.branch || 'CSE'}
+                          </span>
+                        </div>
                         {st.email && (
                           <div className="text-[10px] text-slate-400 truncate max-w-[200px]">
                             {st.email}
