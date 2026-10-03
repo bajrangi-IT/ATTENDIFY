@@ -147,11 +147,11 @@ export const LiveSessionManager: React.FC<LiveSessionManagerProps> = ({ initialS
       let query = supabase
         .from('attendance_sessions')
         .select(`
-          id, session_date, start_time, end_time, session_type, status, is_attendance_locked, secret_seed,
+          id, faculty_id, section_id, classroom_id, subject_offering_id, session_date, start_time, end_time, session_type, status, is_attendance_locked, secret_seed,
           subject_offering:subject_offerings(subject:subjects(name, code)),
           classroom:classrooms(id, room_number, building, device_pairing_code),
           section:sections(name),
-          faculty:faculty(employee_code, profile:profiles(first_name, last_name))
+          faculty:faculty(id, employee_code, profile:profiles(first_name, last_name))
         `)
         .order('session_date', { ascending: false })
         .order('start_time', { ascending: false });
@@ -389,11 +389,12 @@ export const LiveSessionManager: React.FC<LiveSessionManagerProps> = ({ initialS
         const pct = totalEnrolled > 0 ? Math.round((attended / totalEnrolled) * 100) : 0;
 
         // Upsert report for Director
+        const resolvedFacultyId = activeSession.faculty_id || facultyRecord?.id || null;
         await supabase
           .from('attendance_session_reports')
           .upsert({
             session_id: activeSession.id,
-            faculty_id: activeSession.faculty_id,
+            faculty_id: resolvedFacultyId,
             total_enrolled: totalEnrolled,
             present_count: presentCount,
             late_count: lateCount,
@@ -560,10 +561,20 @@ export const LiveSessionManager: React.FC<LiveSessionManagerProps> = ({ initialS
       const excused = roster.filter((r) => r.status === 'excused').length;
       const absent = roster.filter((r) => r.status === 'absent').length;
 
+      let fId = activeSession.faculty_id || facultyRecord?.id || null;
+      if (!fId && profile?.id) {
+        const { data: fac } = await supabase
+          .from('faculty')
+          .select('id')
+          .eq('profile_id', profile.id)
+          .maybeSingle();
+        if (fac?.id) fId = fac.id;
+      }
+
       const { error } = await supabase.from('attendance_session_reports').upsert(
         {
           session_id: activeSession.id,
-          faculty_id: activeSession.faculty_id,
+          faculty_id: fId,
           total_enrolled: total,
           present_count: present,
           late_count: late,

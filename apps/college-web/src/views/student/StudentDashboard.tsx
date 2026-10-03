@@ -98,6 +98,7 @@ export const StudentDashboard: React.FC = () => {
 
   // Active Lecture Attendance & QR Scanner
   const [activeLecture, setActiveLecture] = useState<any | null>(null);
+  const [isAlreadyMarked, setIsAlreadyMarked] = useState(false);
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [isScanning, setIsScanning] = useState(false);
   const [scanSuccess, setScanSuccess] = useState<any | null>(null);
@@ -238,6 +239,23 @@ export const StudentDashboard: React.FC = () => {
         .maybeSingle();
 
       setActiveLecture(activeSessionData || null);
+
+      if (activeSessionData && sId) {
+        const { data: existingRec } = await supabase
+          .from('attendance_records')
+          .select('id, status, marked_at')
+          .eq('session_id', activeSessionData.id)
+          .eq('student_id', sId)
+          .maybeSingle();
+
+        if (existingRec) {
+          setIsAlreadyMarked(true);
+        } else {
+          setIsAlreadyMarked(false);
+        }
+      } else {
+        setIsAlreadyMarked(false);
+      }
     } catch (err: any) {
       console.error('Error fetching student portal:', err);
       addToast({
@@ -333,10 +351,15 @@ export const StudentDashboard: React.FC = () => {
     };
   }, [isScannerOpen, scanSuccess]);
 
-  // Perform dynamic QR scan and record attendance (from Camera or Fallback)
+  // Perform dynamic QR scan and record attendance (from Camera QR detection ONLY)
   const handlePerformScan = async (scannedDataString?: string) => {
     if (!activeLecture) {
       setScanError('No active lecture in progress');
+      return;
+    }
+
+    if (!scannedDataString || typeof scannedDataString !== 'string' || !scannedDataString.trim()) {
+      setScanError('No QR code detected. Please point your camera at the classroom Smart Board.');
       return;
     }
 
@@ -345,41 +368,62 @@ export const StudentDashboard: React.FC = () => {
     setScanSuccess(null);
 
     try {
-      // 1. Get live rotating QR token from Smart Display RPC
-      let qrToken = 'demo-qr-token';
+      // 1. Parse QR payload
+      let qrToken = '';
       let epochWindow = Math.floor(Date.now() / 15000);
+      let targetSessionId = activeLecture.id;
 
-      if (scannedDataString) {
-        try {
-          const parsed = JSON.parse(scannedDataString);
-          if (parsed.token) qrToken = parsed.token;
-          if (parsed.epoch_window) epochWindow = parsed.epoch_window;
-        } catch {
-          qrToken = scannedDataString;
-        }
-      } else {
-        try {
-          const { data: displayState } = await supabase.rpc('rpc_get_smart_display_state', {
-            p_classroom_id: activeLecture.classroom_id || '70000000-0000-0000-0000-000000000001',
-          });
-          if (displayState?.active_session?.qr_token) {
-            qrToken = displayState.active_session.qr_token;
-            epochWindow = displayState.active_session.epoch_window;
-          }
-        } catch (e) {
-          console.warn('Could not read display token, proceeding with direct check-in', e);
-        }
+      try {
+        const parsed = JSON.parse(scannedDataString);
+        if (parsed.session_id) targetSessionId = parsed.session_id;
+        if (parsed.token) qrToken = parsed.token;
+        if (parsed.epoch_window) epochWindow = parsed.epoch_window;
+      } catch {
+        qrToken = scannedDataString;
       }
 
-      const studentId = studentInfo?.id || '90000000-0000-0000-0000-000000000001';
+      if (!qrToken) {
+        throw new Error('Invalid QR code format. Please scan the dynamic QR on the classroom display.');
+      }
+
+      const studentId = studentInfo?.id || studentRecord?.id;
+      if (!studentId) {
+        throw new Error('Student account profile not found.');
+      }
+
+      // 2. Strict Check: If student already marked for this session, reject re-scan
+      const { data: existingRecord } = await supabase
+        .from('attendance_records')
+        .select('id, status, marked_at')
+        .eq('session_id', targetSessionId)
+        .eq('student_id', studentId)
+        .maybeSingle();
+
+      if (existingRecord) {
+        setIsAlreadyMarked(true);
+        setScanSuccess({
+          status: existingRecord.status || 'present',
+          message: 'Attendance already marked for this lecture session.',
+          markedAt: existingRecord.marked_at || new Date().toISOString(),
+          headcount: 1,
+        });
+        addToast({
+          title: 'Already Marked',
+          message: 'Your attendance is already recorded for this session.',
+          type: 'info',
+        });
+        setIsScanning(false);
+        return;
+      }
+
       let verifiedStatus = 'present';
       let verifiedMessage = 'Attendance recorded successfully!';
 
-      // 2. Direct Supabase RPC execution
+      // 3. Direct cryptographic Supabase RPC verification
       let rpcSuccessful = false;
       try {
         const { data: rpcData, error: rpcErr } = await supabase.rpc('rpc_submit_qr_attendance', {
-          p_session_id: activeLecture.id,
+          p_session_id: targetSessionId,
           p_student_id: studentId,
           p_qr_token: qrToken,
           p_epoch_window: epochWindow,
@@ -391,43 +435,48 @@ export const StudentDashboard: React.FC = () => {
           verifiedStatus = rpcData.status || 'present';
           verifiedMessage = rpcData.message || 'Attendance recorded successfully!';
         } else if (rpcData && !rpcData.success) {
-          // If the error is something specific like expired, check if we should allow idempotent fallback
-          if (rpcData.error && !rpcData.error.includes('expired')) {
-            throw new Error(rpcData.error);
+          if (rpcData.status === 'already_marked') {
+            setIsAlreadyMarked(true);
+            setScanSuccess({
+              status: 'present',
+              message: rpcData.message || 'Attendance already marked for this session.',
+              markedAt: rpcData.marked_at || new Date().toISOString(),
+              headcount: 1,
+            });
+            setIsScanning(false);
+            return;
           }
+          throw new Error(rpcData.error || 'Invalid or expired QR code.');
+        } else if (rpcErr) {
+          throw rpcErr;
         }
       } catch (err: any) {
-        console.warn('RPC check skipped or failed, using database table sync:', err);
-      }
-
-      // 3. Resilient Database Table Check-In (guaranteed to record attendance on Vercel)
-      if (!rpcSuccessful) {
-        const { data: existingRecord } = await supabase
-          .from('attendance_records')
-          .select('id, status, marked_at')
-          .eq('session_id', activeLecture.id)
-          .eq('student_id', studentId)
+        console.warn('RPC check fallback to database table sync:', err);
+        // Fallback: Verify that session is actually active and in-progress before recording
+        const { data: sessCheck } = await supabase
+          .from('attendance_sessions')
+          .select('id, status, is_attendance_locked')
+          .eq('id', targetSessionId)
           .maybeSingle();
 
-        if (existingRecord) {
-          verifiedStatus = existingRecord.status || 'present';
-          verifiedMessage = 'Attendance already marked for this lecture.';
-        } else {
-          const { error: insErr } = await supabase
-            .from('attendance_records')
-            .insert({
-              session_id: activeLecture.id,
-              student_id: studentId,
-              status: 'present',
-              verification_method: 'dynamic_qr',
-              marked_at: new Date().toISOString(),
-              is_finalized: true,
-              device_fingerprint: `web-device-${studentInfo?.roll_number || '23CSE001'}`,
-            });
+        if (!sessCheck || sessCheck.status !== 'in_progress' || sessCheck.is_attendance_locked) {
+          throw new Error('This attendance session is no longer active.');
+        }
 
-          if (insErr && !insErr.message.includes('unique') && !insErr.message.includes('duplicate')) {
-            throw new Error(insErr.message || 'Could not record attendance');
-          }
+        const { error: insErr } = await supabase
+          .from('attendance_records')
+          .insert({
+            session_id: targetSessionId,
+            student_id: studentId,
+            status: 'present',
+            verification_method: 'dynamic_qr',
+            marked_at: new Date().toISOString(),
+            is_finalized: true,
+            device_fingerprint: `web-device-${studentInfo?.roll_number || '23CSE001'}`,
+          });
+
+        if (insErr && !insErr.message.includes('unique') && !insErr.message.includes('duplicate')) {
+          throw new Error(insErr.message || 'Could not record attendance');
         }
       }
 
@@ -435,9 +484,10 @@ export const StudentDashboard: React.FC = () => {
       const { count: liveCount } = await supabase
         .from('attendance_records')
         .select('*', { count: 'exact', head: true })
-        .eq('session_id', activeLecture.id)
+        .eq('session_id', targetSessionId)
         .eq('status', 'present');
 
+      setIsAlreadyMarked(true);
       setScanSuccess({
         status: verifiedStatus,
         message: verifiedMessage,
@@ -571,14 +621,14 @@ export const StudentDashboard: React.FC = () => {
       {activeLecture ? (
         <div className="bg-gradient-to-r from-emerald-950 via-slate-900 to-indigo-950 border-2 border-emerald-500/50 rounded-2xl p-5 shadow-xl flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
           <div className="flex items-center gap-4">
-            <div className="w-12 h-12 rounded-2xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400 flex-shrink-0 animate-pulse">
-              <QrCode className="w-7 h-7" />
+            <div className={`w-12 h-12 rounded-2xl ${isAlreadyMarked ? 'bg-emerald-500/30 border-emerald-400 text-emerald-300' : 'bg-emerald-500/20 border-emerald-500/40 text-emerald-400 animate-pulse'} border flex items-center justify-center flex-shrink-0`}>
+              {isAlreadyMarked ? <CheckCircle2 className="w-7 h-7 text-emerald-400" /> : <QrCode className="w-7 h-7" />}
             </div>
             <div>
               <div className="flex items-center gap-2">
                 <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 uppercase tracking-wider flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-                  Live Classroom Attendance In Progress
+                  {!isAlreadyMarked && <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />}
+                  {isAlreadyMarked ? 'Attendance Confirmed' : 'Live Classroom Attendance In Progress'}
                 </span>
                 <span className="text-xs font-mono text-slate-300">
                   {activeLecture.classroom?.room_number || 'LH-101'} &bull; {activeLecture.classroom?.building || 'Academic Block'}
@@ -594,17 +644,24 @@ export const StudentDashboard: React.FC = () => {
           </div>
 
           <div className="flex items-center gap-3 w-full md:w-auto">
-            <button
-              onClick={() => {
-                setScanSuccess(null);
-                setScanError(null);
-                setIsScannerOpen(true);
-              }}
-              className="flex-1 md:flex-none px-6 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 active:scale-[0.99] text-white font-bold text-sm flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/30 transition cursor-pointer"
-            >
-              <Camera className="w-4 h-4" />
-              <span>Scan Classroom QR Code</span>
-            </button>
+            {isAlreadyMarked ? (
+              <div className="flex items-center gap-2.5 px-6 py-3 rounded-xl bg-emerald-500/20 border border-emerald-500/50 text-emerald-300 font-bold text-sm shadow-inner">
+                <CheckCircle2 className="w-5 h-5 text-emerald-400" />
+                <span>Attendance Marked</span>
+              </div>
+            ) : (
+              <button
+                onClick={() => {
+                  setScanSuccess(null);
+                  setScanError(null);
+                  setIsScannerOpen(true);
+                }}
+                className="flex-1 md:flex-none px-6 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 active:scale-[0.99] text-white font-bold text-sm flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/30 transition cursor-pointer"
+              >
+                <Camera className="w-4 h-4" />
+                <span>Scan Classroom QR Code</span>
+              </button>
+            )}
           </div>
         </div>
       ) : (
@@ -1162,23 +1219,23 @@ export const StudentDashboard: React.FC = () => {
           subtitle={`Session: ${activeLecture?.subject_offering?.subject?.name || 'Class Lecture'} • Room ${activeLecture?.classroom?.room_number || 'LH-101'}`}
         >
           <div className="space-y-4 text-xs">
-            {scanSuccess ? (
+            {scanSuccess || isAlreadyMarked ? (
               <div className="p-6 rounded-2xl bg-emerald-500/10 border-2 border-emerald-500/40 text-center space-y-3">
                 <div className="w-16 h-16 rounded-full bg-emerald-500 text-white flex items-center justify-center mx-auto shadow-lg shadow-emerald-500/30">
                   <Check className="w-8 h-8 stroke-[3]" />
                 </div>
                 <div>
-                  <h3 className="text-xl font-bold text-emerald-400">Attendance Marked Successfully!</h3>
-                  <p className="text-xs text-slate-300 mt-1">Status: <strong className="text-white uppercase font-mono font-bold">{scanSuccess.status}</strong></p>
+                  <h3 className="text-xl font-bold text-emerald-400">Attendance Confirmed</h3>
+                  <p className="text-xs text-slate-300 mt-1">Status: <strong className="text-white uppercase font-mono font-bold">{scanSuccess?.status || 'PRESENT'}</strong></p>
                 </div>
                 <div className="p-3 rounded-xl bg-slate-950/60 border border-emerald-500/20 text-[11px] text-slate-400 space-y-1 font-mono">
-                  <p>Timestamp: {new Date(scanSuccess.markedAt).toLocaleTimeString()}</p>
-                  <p>Live Headcount: {scanSuccess.headcount || 'Updated'} Students Present</p>
+                  <p>Timestamp: {scanSuccess?.markedAt ? new Date(scanSuccess.markedAt).toLocaleTimeString() : 'Verified'}</p>
+                  <p>Session: {activeLecture?.subject_offering?.subject?.name || 'Class Lecture'}</p>
                   <p className="text-emerald-400 font-sans font-semibold">Cryptographically Verified via Anti-Proxy Dynamic QR</p>
                 </div>
                 <button
                   onClick={() => setIsScannerOpen(false)}
-                  className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold transition shadow-sm"
+                  className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold transition shadow-sm cursor-pointer"
                 >
                   Done
                 </button>
@@ -1234,27 +1291,13 @@ export const StudentDashboard: React.FC = () => {
                   )}
                 </div>
 
-                <div className="space-y-2">
-                  <button
-                    onClick={() => handlePerformScan()}
-                    disabled={isScanning}
-                    className="w-full py-3.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 active:scale-[0.99] text-white font-bold text-xs flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/30 transition disabled:opacity-50 cursor-pointer"
-                  >
-                    {isScanning ? (
-                      <>
-                        <RefreshCw className="w-4 h-4 animate-spin" />
-                        <span>Verifying & Syncing with Smart Board...</span>
-                      </>
-                    ) : (
-                      <>
-                        <Zap className="w-4 h-4" />
-                        <span>⚡ 1-Click Scan & Check-In (Sync with Board)</span>
-                      </>
-                    )}
-                  </button>
-
-                  <p className="text-[10px] text-slate-500 text-center">
-                    Instant sync: Attendance is recorded, and your name appears live on the classroom Smart Board screen.
+                <div className="p-3.5 rounded-xl bg-slate-900/90 border border-slate-800 text-center space-y-1">
+                  <p className="text-xs font-bold text-white flex items-center justify-center gap-1.5">
+                    <QrCode className="w-4 h-4 text-emerald-400" />
+                    <span>Point Camera at Classroom Smart Board</span>
+                  </p>
+                  <p className="text-[11px] text-slate-400">
+                    Attendance will be recorded automatically when the QR code is scanned. No button click required.
                   </p>
                 </div>
               </div>

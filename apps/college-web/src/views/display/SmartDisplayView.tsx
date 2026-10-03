@@ -196,7 +196,7 @@ export const SmartDisplayView: React.FC<SmartDisplayViewProps> = ({ onBack }) =>
               setSessionState('ACTIVE_QR');
               setSecondsRemaining(15 - (Math.floor(now / 1000) % 15));
             } else {
-              setSessionState('WAITING');
+              setSessionState((prev) => (prev === 'SESSION_ENDED' ? 'SESSION_ENDED' : 'WAITING'));
             }
           }
         }
@@ -425,23 +425,60 @@ export const SmartDisplayView: React.FC<SmartDisplayViewProps> = ({ onBack }) =>
     if (!activeSession) return;
     setIsSessionActionLoading(true);
     try {
-      await supabase
-        .from('attendance_sessions')
-        .update({
-          status: 'completed',
-          is_attendance_locked: true,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', activeSession.id);
+      // 1. Invoke rpc_end_attendance_session to finalize records, compute counts, and create session report
+      let endedSummary: any = null;
+      try {
+        const { data: rpcRes, error: rpcErr } = await supabase.rpc('rpc_end_attendance_session', {
+          p_session_id: activeSession.id,
+          p_submission_notes: 'Concluded from Smart Board Interactive Display',
+        });
+        if (!rpcErr && rpcRes && rpcRes.success) {
+          endedSummary = {
+            subjectCode: activeSession.subjectCode,
+            subjectName: activeSession.subjectName,
+            totalEnrolled: rpcRes.total_enrolled,
+            presentCount: rpcRes.present_count,
+            absentCount: rpcRes.absent_count,
+            attendancePercentage: rpcRes.attendance_percentage,
+          };
+        }
+      } catch (rpcEx) {
+        console.warn('RPC rpc_end_attendance_session fallback:', rpcEx);
+      }
 
-      setEndedSession({
-        subjectCode: activeSession.subjectCode,
-        subjectName: activeSession.subjectName,
-        totalEnrolled: activeSession.totalEnrolled,
-        presentCount: activeSession.attendanceCount,
-        absentCount: Math.max(0, activeSession.totalEnrolled - activeSession.attendanceCount),
-        attendancePercentage: Math.round((activeSession.attendanceCount / (activeSession.totalEnrolled || 1)) * 100),
-      });
+      if (!endedSummary) {
+        // Fallback: update attendance_sessions and query live counts
+        await supabase
+          .from('attendance_sessions')
+          .update({
+            status: 'completed',
+            is_attendance_locked: true,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', activeSession.id);
+
+        const { count: liveCount } = await supabase
+          .from('attendance_records')
+          .select('*', { count: 'exact', head: true })
+          .eq('session_id', activeSession.id)
+          .in('status', ['present', 'late']);
+
+        const actualPresent = liveCount !== null ? liveCount : (activeSession.attendanceCount || 0);
+        const actualEnrolled = Math.max(activeSession.totalEnrolled || 0, actualPresent);
+        const actualAbsent = Math.max(0, actualEnrolled - actualPresent);
+        const actualPct = actualEnrolled > 0 ? Math.round((actualPresent / actualEnrolled) * 100) : 100;
+
+        endedSummary = {
+          subjectCode: activeSession.subjectCode,
+          subjectName: activeSession.subjectName,
+          totalEnrolled: actualEnrolled,
+          presentCount: actualPresent,
+          absentCount: actualAbsent,
+          attendancePercentage: actualPct,
+        };
+      }
+
+      setEndedSession(endedSummary);
       setSessionState('SESSION_ENDED');
       setActiveSession(null);
     } catch (err) {
