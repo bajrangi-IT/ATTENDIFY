@@ -124,11 +124,26 @@ export const ReportApprovalWorkflow: React.FC = () => {
 
     setSubmitting(true);
     try {
+      let reviewerId: string | null = profile?.id || null;
+      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+      if (reviewerId && !uuidRegex.test(reviewerId)) {
+        reviewerId = null;
+      }
+
+      if (!reviewerId && profile?.email) {
+        const { data: dbProf } = await supabase
+          .from('profiles')
+          .select('id')
+          .ilike('email', profile.email)
+          .maybeSingle();
+        if (dbProf?.id) reviewerId = dbProf.id;
+      }
+
       const { error } = await supabase
         .from('attendance_session_reports')
         .update({
           status: actionType,
-          reviewed_by: profile?.id,
+          reviewed_by: reviewerId,
           reviewed_at: new Date().toISOString(),
           review_remarks: reviewRemarks,
           updated_at: new Date().toISOString(),
