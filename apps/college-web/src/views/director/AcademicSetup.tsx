@@ -95,8 +95,25 @@ export const AcademicSetup: React.FC = () => {
     setLoading(true);
     const instId = profile?.institution_id || currentInstitutionId || DEFAULT_INSTITUTION_ID;
     try {
+      // 0. Guarantee institution exists in database
+      const { data: instCheck } = await supabase.from('institutions').select('id').eq('id', instId).maybeSingle();
+      if (!instCheck) {
+        try {
+          await supabase.from('institutions').upsert({
+            id: instId,
+            name: institution?.name || 'Academic Institution',
+            code: institution?.code || 'INST',
+            address: institution?.address || 'SDGI Global University Campus',
+            timezone: 'Asia/Kolkata',
+            is_active: true
+          });
+        } catch (instSyncErr) {
+          console.warn('Auto-sync institution notice:', instSyncErr);
+        }
+      }
+
       // 1. Fetch departments, academic years, and campuses strictly for this institution
-      const [
+      let [
         { data: depts, error: dErr },
         { data: years, error: yErr },
         { data: camps, error: cErr }
@@ -110,9 +127,43 @@ export const AcademicSetup: React.FC = () => {
       if (yErr) throw yErr;
       if (cErr) throw cErr;
 
+      // Auto-provision default campus block if this school doesn't have one yet
+      let campList = camps || [];
+      if (campList.length === 0) {
+        try {
+          const { data: newCamp } = await supabase.from('campuses').insert({
+            id: crypto.randomUUID(),
+            institution_id: instId,
+            name: `${institution?.name || 'Main'} Campus Block`,
+            code: `${(institution?.code || 'CAMP').toUpperCase()}-MAIN`,
+            address: institution?.address || 'SDGI Global University Campus'
+          }).select().single();
+          if (newCamp) campList = [newCamp];
+        } catch (cProvErr) {
+          console.warn('Campus auto-provision notice:', cProvErr);
+        }
+      }
+
+      // Auto-provision default academic year if this school doesn't have one yet
+      let yearList = years || [];
+      if (yearList.length === 0) {
+        try {
+          const { data: newYear } = await supabase.from('academic_years').insert({
+            id: crypto.randomUUID(),
+            institution_id: instId,
+            name: '2025-2026',
+            start_date: '2025-08-01',
+            end_date: '2026-06-30',
+            is_current: true
+          }).select().single();
+          if (newYear) yearList = [newYear];
+        } catch (yProvErr) {
+          console.warn('Academic year auto-provision notice:', yProvErr);
+        }
+      }
+
       const deptList = depts || [];
       const deptIds = deptList.map((d: any) => d.id);
-      const campList = camps || [];
       const campIds = campList.map((c: any) => c.id);
 
       // 2. Fetch programs and subjects strictly belonging to this institution's departments
@@ -267,6 +318,19 @@ export const AcademicSetup: React.FC = () => {
     e.preventDefault();
     const instId = profile?.institution_id || currentInstitutionId || DEFAULT_INSTITUTION_ID;
     try {
+      // Ensure institution exists in PostgreSQL institutions table to avoid foreign key violation
+      const { data: instCheck } = await supabase.from('institutions').select('id').eq('id', instId).maybeSingle();
+      if (!instCheck) {
+        await supabase.from('institutions').upsert({
+          id: instId,
+          name: institution?.name || 'Academic Institution',
+          code: institution?.code || 'INST',
+          address: institution?.address || 'SDGI Global University Campus',
+          timezone: 'Asia/Kolkata',
+          is_active: true
+        });
+      }
+
       const { error } = await supabase.from('departments').insert({
         institution_id: instId,
         name: deptName.trim(),
@@ -328,8 +392,20 @@ export const AcademicSetup: React.FC = () => {
 
   const handleCreateClassroom = async (e: React.FormEvent) => {
     e.preventDefault();
+    const instId = profile?.institution_id || currentInstitutionId || DEFAULT_INSTITUTION_ID;
     try {
-      const campId = roomCampusId || campuses[0]?.id || '10000000-0000-0000-0000-000000000001';
+      let campId = roomCampusId || campuses[0]?.id;
+      if (!campId) {
+        const { data: createdCamp } = await supabase.from('campuses').insert({
+          id: crypto.randomUUID(),
+          institution_id: instId,
+          name: `${institution?.name || 'Main'} Campus Block`,
+          code: `${(institution?.code || 'CAMP').toUpperCase()}-MAIN`,
+          address: institution?.address || 'SDGI Global University Campus'
+        }).select().single();
+        campId = createdCamp?.id;
+      }
+
       const { error } = await supabase.from('classrooms').insert({
         campus_id: campId,
         room_number: roomNumber.trim().toUpperCase(),

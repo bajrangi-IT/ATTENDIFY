@@ -73,8 +73,42 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     try {
       const { data: dbInsts } = await supabase.from('institutions').select('*').order('name');
       const customSchools = JSON.parse(localStorage.getItem('campusattend_custom_schools') || '[]');
-      
-      const combined = [...(dbInsts || [])];
+
+      // Guarantee any custom schools stored locally exist in Supabase database
+      for (const custom of customSchools) {
+        if (!dbInsts?.some((item) => item.id === custom.id)) {
+          try {
+            await supabase.from('institutions').upsert({
+              id: custom.id,
+              name: custom.name,
+              code: custom.code,
+              address: custom.address || 'SDGI Global University Campus',
+              timezone: 'Asia/Kolkata',
+              is_active: true
+            });
+            await supabase.from('campuses').upsert({
+              id: crypto.randomUUID(),
+              institution_id: custom.id,
+              name: `${custom.name} Campus Block`,
+              code: `${(custom.code || 'CAMP').toUpperCase()}-MAIN`,
+              address: custom.address || 'SDGI Global University Campus'
+            });
+            await supabase.from('academic_years').upsert({
+              id: crypto.randomUUID(),
+              institution_id: custom.id,
+              name: '2025-2026',
+              start_date: '2025-08-01',
+              end_date: '2026-06-30',
+              is_current: true
+            });
+          } catch (syncErr) {
+            console.warn('Auto-sync institution error:', syncErr);
+          }
+        }
+      }
+
+      const { data: refreshedDbInsts } = await supabase.from('institutions').select('*').order('name');
+      const combined = [...(refreshedDbInsts || dbInsts || [])];
       for (const custom of customSchools) {
         if (!combined.some((item) => item.id === custom.id || item.code === custom.code)) {
           combined.push(custom);
@@ -112,12 +146,44 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     const allInsts = await fetchAllInstitutions();
     setInstitutionsList(allInsts);
 
-    const matchedInst = allInsts.find((item) => item.id === instId);
-    if (matchedInst) {
-      setInstitution(matchedInst);
+    // Ensure the institution exists in PostgreSQL institutions table
+    const { data: singleInst } = await supabase.from('institutions').select('*').eq('id', instId).maybeSingle();
+    if (singleInst) {
+      setInstitution(singleInst);
     } else {
-      const { data: singleInst } = await supabase.from('institutions').select('*').eq('id', instId).maybeSingle();
-      setInstitution(singleInst || null);
+      const matchedInst = allInsts.find((item) => item.id === instId);
+      if (matchedInst) {
+        try {
+          await supabase.from('institutions').upsert({
+            id: instId,
+            name: matchedInst.name,
+            code: matchedInst.code,
+            address: matchedInst.address || 'SDGI Global University Campus',
+            timezone: 'Asia/Kolkata',
+            is_active: true
+          });
+          await supabase.from('campuses').upsert({
+            id: crypto.randomUUID(),
+            institution_id: instId,
+            name: `${matchedInst.name} Campus Block`,
+            code: `${(matchedInst.code || 'CAMP').toUpperCase()}-MAIN`,
+            address: matchedInst.address || 'SDGI Global University Campus'
+          });
+          await supabase.from('academic_years').upsert({
+            id: crypto.randomUUID(),
+            institution_id: instId,
+            name: '2025-2026',
+            start_date: '2025-08-01',
+            end_date: '2026-06-30',
+            is_current: true
+          });
+        } catch (provErr) {
+          console.warn('Institution auto-provision notice:', provErr);
+        }
+        setInstitution(matchedInst);
+      } else {
+        setInstitution(null);
+      }
     }
 
     if (prof.role === 'faculty' || prof.role === 'hod') {
@@ -529,10 +595,10 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         password: cleanPass,
       };
 
-      // Create initial departments only if specifically provided by director
+      // Create initial departments
       const initialDeptNames = (schoolData.departments && schoolData.departments.length > 0)
         ? schoolData.departments
-        : [];
+        : ['Computer Science & Engineering', 'Management Studies', 'Applied Sciences'];
 
       const deptInserts = initialDeptNames.map((dName, idx) => ({
         id: crypto.randomUUID(),
@@ -552,15 +618,34 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       existingCustomProfiles.unshift(newProfile);
       localStorage.setItem('campusattend_custom_profiles', JSON.stringify(existingCustomProfiles));
 
-      // 2. Best-effort Supabase synchronization
+      // 2. Direct Supabase synchronization with error logging
       try {
-        // Try inserting into institutions and departments
-        await supabase.from('institutions').insert(newSchool);
+        await supabase.from('institutions').upsert(newSchool);
+
+        // Auto provision default campus and academic year
+        await supabase.from('campuses').upsert({
+          id: crypto.randomUUID(),
+          institution_id: newSchoolId,
+          name: `${cleanSchoolName} Campus Block`,
+          code: `${cleanSchoolCode}-MAIN`,
+          address: schoolData.address?.trim() || 'SDGI Global University Campus'
+        });
+
+        await supabase.from('academic_years').upsert({
+          id: crypto.randomUUID(),
+          institution_id: newSchoolId,
+          name: '2025-2026',
+          start_date: '2025-08-01',
+          end_date: '2026-06-30',
+          is_current: true
+        });
+
         for (const dept of deptInserts) {
-          await supabase.from('departments').insert(dept);
+          await supabase.from('departments').upsert(dept);
         }
+
         // Also insert profile into supabase profiles table
-        await supabase.from('profiles').insert({
+        await supabase.from('profiles').upsert({
           id: newProfile.id,
           user_id: newProfile.user_id,
           institution_id: newProfile.institution_id,
@@ -719,7 +804,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const switchInstitution = async (newInstId: string) => {
     setCurrentInstitutionId(newInstId);
     localStorage.setItem('campusattend_active_institution_id', newInstId);
-    
+
     // Check in institutionsList first
     const matched = institutionsList.find((i) => i.id === newInstId);
     if (matched) {

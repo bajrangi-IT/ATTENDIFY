@@ -235,6 +235,19 @@ export const FacultyDirectory: React.FC = () => {
     setSubmittingAdd(true);
     const instId = profile?.institution_id || currentInstitutionId || DEFAULT_INSTITUTION_ID;
     try {
+      // Guarantee institution exists in institutions table
+      const { data: instCheck } = await supabase.from('institutions').select('id').eq('id', instId).maybeSingle();
+      if (!instCheck) {
+        await supabase.from('institutions').upsert({
+          id: instId,
+          name: institution?.name || 'Academic Institution',
+          code: institution?.code || 'INST',
+          address: institution?.address || 'SDGI Global University Campus',
+          timezone: 'Asia/Kolkata',
+          is_active: true
+        });
+      }
+
       const { data, error } = await supabase.rpc('rpc_admin_create_faculty', {
         p_institution_id: instId,
         p_department_id: deptId,
