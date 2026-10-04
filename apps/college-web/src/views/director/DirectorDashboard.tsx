@@ -115,32 +115,31 @@ export const DirectorDashboard: React.FC<DirectorDashboardProps> = ({
         let inProgressSessions: any[] = [];
         let summaryRows: any[] = [];
 
-        // Only query sessions if this institution has faculty
-        if (facultyIds.length > 0) {
-          const [
-            { count: held },
-            { count: cancelled },
-            { data: live }
-          ] = await Promise.all([
-            supabase.from('attendance_sessions').select('*', { count: 'exact', head: true }).in('faculty_id', facultyIds).in('status', ['completed', 'audit_locked']),
-            supabase.from('attendance_sessions').select('*', { count: 'exact', head: true }).in('faculty_id', facultyIds).eq('status', 'cancelled'),
-            supabase.from('attendance_sessions')
-              .select(`
-                id, status, session_date, start_time, end_time, session_type, timetable_entry_id,
-                subject_offering:subject_offerings(subject:subjects(code, name, department_id)),
-                classroom:classrooms(room_number, building),
-                section:sections(name, semester:semesters(program:programs(department_id))),
-                faculty:faculty(department_id, profile:profiles(first_name, last_name))
-              `)
-              .in('faculty_id', facultyIds)
-              .eq('status', 'in_progress')
-              .order('created_at', { ascending: false })
-              .limit(25),
-          ]);
-          heldCount = held || 0;
-          cancelledCount = cancelled || 0;
-          inProgressSessions = live || [];
-        }
+        // Query sessions strictly scoped to THIS School (institution_id)
+        // Ensures cross-school teaching lectures always route to the class's respective Director
+        const [
+          { count: held },
+          { count: cancelled },
+          { data: live }
+        ] = await Promise.all([
+          supabase.from('attendance_sessions').select('*', { count: 'exact', head: true }).eq('institution_id', instId).in('status', ['completed', 'audit_locked']),
+          supabase.from('attendance_sessions').select('*', { count: 'exact', head: true }).eq('institution_id', instId).eq('status', 'cancelled'),
+          supabase.from('attendance_sessions')
+            .select(`
+              id, status, session_date, start_time, end_time, session_type, timetable_entry_id, institution_id,
+              subject_offering:subject_offerings(subject:subjects(code, name, department_id)),
+              classroom:classrooms(room_number, building),
+              section:sections(name, semester:semesters(program:programs(department_id))),
+              faculty:faculty(department_id, employee_code, profile:profiles(first_name, last_name))
+            `)
+            .eq('institution_id', instId)
+            .eq('status', 'in_progress')
+            .order('created_at', { ascending: false })
+            .limit(25),
+        ]);
+        heldCount = held || 0;
+        cancelledCount = cancelled || 0;
+        inProgressSessions = live || [];
 
         // Only query summary rows if this institution has departments
         if (deptIds.length > 0) {

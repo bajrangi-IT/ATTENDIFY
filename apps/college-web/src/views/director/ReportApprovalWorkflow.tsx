@@ -41,36 +41,23 @@ export const ReportApprovalWorkflow: React.FC = () => {
         return;
       }
 
-      // Only fetch reports belonging to faculty of this institution
-      const { data: instFaculty, error: facErr } = await supabase
-        .from('faculty')
-        .select('id')
-        .eq('institution_id', instId);
-
-      if (facErr) throw facErr;
-
-      const facultyIds = (instFaculty || []).map((f) => f.id);
-
-      if (facultyIds.length === 0) {
-        setReports([]);
-        setLoading(false);
-        return;
-      }
-
+      // Fetch reports belonging to THIS School / Institution (institution_id)
+      // Even if the class was taught by an external or cross-school faculty member,
+      // the report is routed directly to the Director of the student cohort's school.
       const { data, error } = await supabase
         .from('attendance_session_reports')
         .select(`
           id, session_id, total_enrolled, present_count, late_count, excused_count, absent_count,
-          submission_notes, status, reviewed_at, review_remarks,
+          submission_notes, status, reviewed_at, review_remarks, institution_id,
           session:attendance_sessions(
-            id, session_date, start_time, end_time, session_type,
+            id, session_date, start_time, end_time, session_type, institution_id,
             subject_offering:subject_offerings(subject:subjects(code, name)),
-            section:sections(name, semester:semesters(semester_number, program:programs(name, code))),
+            section:sections(name, semester:semesters(semester_number, program:programs(name, code, department:departments(institution_id)))),
             classroom:classrooms(room_number, building)
           ),
-          faculty:faculty(id, institution_id, profile:profiles(first_name, last_name, email))
+          faculty:faculty(id, institution_id, employee_code, profile:profiles(first_name, last_name, email))
         `)
-        .in('faculty_id', facultyIds)
+        .eq('institution_id', instId)
         .order('created_at', { ascending: false });
 
       if (error) throw error;

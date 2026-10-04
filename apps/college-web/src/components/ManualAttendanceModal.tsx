@@ -26,6 +26,7 @@ import {
 } from 'lucide-react';
 
 export interface ManualAttendancePreload {
+  institutionId?: string;
   sectionId?: string;
   subjectOfferingId?: string;
   sessionDate?: string;
@@ -61,7 +62,10 @@ export const ManualAttendanceModal: React.FC<ManualAttendanceModalProps> = ({
   const { facultyRecord, profile, institution, currentInstitutionId } = useAuth();
   const toast = useToast();
 
-  const effectiveInstitutionId = profile?.institution_id || currentInstitutionId || institution?.id;
+  const [availableInstitutions, setAvailableInstitutions] = useState<any[]>([]);
+  const [selectedInstitutionId, setSelectedInstitutionId] = useState<string>(
+    initialData?.institutionId || profile?.institution_id || currentInstitutionId || institution?.id || '00000000-0000-0000-0000-000000000001'
+  );
 
   // Metadata dropdown state
   const [sectionsList, setSectionsList] = useState<any[]>([]);
@@ -94,9 +98,34 @@ export const ManualAttendanceModal: React.FC<ManualAttendanceModalProps> = ({
   const [searchTerm, setSearchTerm] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
-  // 1. Fetch available sections, subjects, classrooms for this institution
+  // Fetch all schools/institutions so faculty can switch target school if teaching across institutions
   useEffect(() => {
-    if (!isOpen || !effectiveInstitutionId) return;
+    async function loadInstitutions() {
+      try {
+        const { data } = await supabase
+          .from('institutions')
+          .select('id, name, code')
+          .order('name');
+        if (data && data.length > 0) {
+          setAvailableInstitutions(data);
+        }
+      } catch (err) {
+        console.warn('Could not load institutions list:', err);
+      }
+    }
+    loadInstitutions();
+  }, []);
+
+  // Update selected institution when initialData changes
+  useEffect(() => {
+    if (initialData?.institutionId) {
+      setSelectedInstitutionId(initialData.institutionId);
+    }
+  }, [initialData]);
+
+  // 1. Fetch available sections, subjects, classrooms for the selected institution
+  useEffect(() => {
+    if (!isOpen || !selectedInstitutionId) return;
 
     async function loadAcademicMeta() {
       setLoadingMeta(true);
@@ -105,7 +134,7 @@ export const ManualAttendanceModal: React.FC<ManualAttendanceModalProps> = ({
         const { data: depts } = await supabase
           .from('departments')
           .select('id')
-          .eq('institution_id', effectiveInstitutionId);
+          .eq('institution_id', selectedInstitutionId);
 
         const deptIds = (depts || []).map((d: any) => d.id);
         if (deptIds.length > 0) {
@@ -137,18 +166,33 @@ export const ManualAttendanceModal: React.FC<ManualAttendanceModalProps> = ({
 
               const secRows = secs || [];
               setSectionsList(secRows);
-              if (!selectedSectionId && secRows.length > 0) {
-                setSelectedSectionId(secRows[0].id);
+              if (secRows.length > 0) {
+                // If current selected section is not in the new list, select first
+                if (!selectedSectionId || !secRows.some(s => s.id === selectedSectionId)) {
+                  setSelectedSectionId(secRows[0].id);
+                }
+              } else {
+                setSectionsList([]);
+                setSelectedSectionId('');
               }
+            } else {
+              setSectionsList([]);
+              setSelectedSectionId('');
             }
+          } else {
+            setSectionsList([]);
+            setSelectedSectionId('');
           }
+        } else {
+          setSectionsList([]);
+          setSelectedSectionId('');
         }
 
         // Fetch campuses for classrooms
         const { data: campusList } = await supabase
           .from('campuses')
           .select('id')
-          .eq('institution_id', effectiveInstitutionId);
+          .eq('institution_id', selectedInstitutionId);
 
         const campusIds = (campusList || []).map((c: any) => c.id);
         let roomRows: any[] = [];
@@ -163,7 +207,7 @@ export const ManualAttendanceModal: React.FC<ManualAttendanceModalProps> = ({
         }
 
         if (roomRows.length === 0) {
-          // Robust fallback to any classrooms
+          // Fallback to any classrooms
           const { data: fallbackRooms } = await supabase
             .from('classrooms')
             .select('id, room_number, building')
@@ -183,7 +227,7 @@ export const ManualAttendanceModal: React.FC<ManualAttendanceModalProps> = ({
     }
 
     loadAcademicMeta();
-  }, [isOpen, effectiveInstitutionId]);
+  }, [isOpen, selectedInstitutionId]);
 
   // 2. Fetch subject offerings for the selected section
   useEffect(() => {
@@ -364,6 +408,7 @@ export const ManualAttendanceModal: React.FC<ManualAttendanceModalProps> = ({
         .from('attendance_sessions')
         .insert({
           faculty_id: assignedFacultyId,
+          institution_id: selectedInstitutionId,
           subject_offering_id: selectedOfferingId,
           section_id: selectedSectionId,
           classroom_id: finalClassroomId,
@@ -398,6 +443,26 @@ export const ManualAttendanceModal: React.FC<ManualAttendanceModalProps> = ({
         .insert(recordRows);
 
       if (recErr) throw recErr;
+
+      // 3.1 Create and transmit session report directly to the target School's Directorate
+      const attended = presentCount + lateCount + excusedCount;
+      const pct = roster.length > 0 ? Math.round((attended / roster.length) * 100) : 0;
+      await supabase
+        .from('attendance_session_reports')
+        .upsert({
+          session_id: sessionId,
+          faculty_id: assignedFacultyId,
+          institution_id: selectedInstitutionId,
+          total_enrolled: roster.length,
+          present_count: presentCount,
+          late_count: lateCount,
+          excused_count: excusedCount,
+          absent_count: absentCount,
+          attendance_percentage: pct,
+          submission_notes: `Manual Attendance Register: ${reasonNote}`,
+          status: 'submitted',
+          updated_at: new Date().toISOString()
+        }, { onConflict: 'session_id' });
 
       // 4. Create an audit log entry for total compliance transparency
       await supabase.from('attendance_audit_log').insert({
@@ -450,6 +515,43 @@ export const ManualAttendanceModal: React.FC<ManualAttendanceModalProps> = ({
             </p>
           </div>
         </div>
+
+        {/* Target School / Institution (For multi-school teaching & cross-institutional lecture routing) */}
+        {availableInstitutions.length > 0 && (
+          <div className="bg-slate-50 border border-slate-200/90 rounded-2xl p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-xl bg-indigo-50 border border-indigo-200 flex items-center justify-center shrink-0">
+                <Building2 className="w-4 h-4 text-indigo-600" />
+              </div>
+              <div>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs font-bold text-slate-800">Target School / College</span>
+                  <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800">
+                    Multi-School Sync
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-500">
+                  Select the school whose students you are teaching. Lecture attendance &amp; approval report will route exclusively to this school's Director.
+                </p>
+              </div>
+            </div>
+            <select
+              value={selectedInstitutionId}
+              onChange={(e) => {
+                setSelectedInstitutionId(e.target.value);
+                setSelectedSectionId('');
+                setSelectedOfferingId('');
+              }}
+              className="p-2 text-xs border border-slate-300 rounded-xl bg-white font-bold text-indigo-950 focus:ring-2 focus:ring-indigo-500 min-w-[240px]"
+            >
+              {availableInstitutions.map((inst) => (
+                <option key={inst.id} value={inst.id}>
+                  {inst.name} {inst.code ? `(${inst.code})` : ''}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
 
         {/* Section 1: Session Nature & Target Class Setup */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 bg-slate-50 p-4 rounded-2xl border border-slate-200">
