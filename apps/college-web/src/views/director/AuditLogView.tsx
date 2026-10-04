@@ -58,13 +58,13 @@ export const AuditLogView: React.FC = () => {
         .from('audit_logs')
         .select(`
           id,
+          actor_id,
           action,
           entity_type,
           entity_id,
           details,
           ip_address,
-          created_at,
-          actor:profiles(first_name, last_name, email, role)
+          created_at
         `, { count: 'exact' });
 
       if (actionFilter !== 'ALL') {
@@ -85,7 +85,24 @@ export const AuditLogView: React.FC = () => {
         .range(from, to);
 
       if (error) throw error;
-      setLogs((data as any) || []);
+
+      // Enrich with profile information safely
+      const actorIds = Array.from(new Set((data || []).map((d: any) => d.actor_id).filter(Boolean)));
+      const profileMap = new Map();
+      if (actorIds.length > 0) {
+        const { data: profs } = await supabase
+          .from('profiles')
+          .select('id, first_name, last_name, email, role')
+          .in('id', actorIds);
+        (profs || []).forEach((p: any) => profileMap.set(p.id, p));
+      }
+
+      const enriched = (data || []).map((log: any) => ({
+        ...log,
+        actor: profileMap.get(log.actor_id) || null,
+      }));
+
+      setLogs(enriched);
       setTotalCount(count || 0);
     } catch (err: any) {
       console.error('Failed to load audit logs:', err);

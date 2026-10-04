@@ -503,33 +503,16 @@ export const DirectorDashboard: React.FC<DirectorDashboardProps> = ({
         </div>
 
         <div className="flex flex-wrap items-center gap-2 self-start md:self-auto">
-          <button
-            onClick={() => setIsManualModalOpen(true)}
-            className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-sm transition flex items-center gap-1.5 cursor-pointer"
-          >
-            <BookOpen className="w-3.5 h-3.5" />
-            <span>Manual Attendance (Guest/Library)</span>
-          </button>
-
           {onNavigateToTimetable && (
             <button
               onClick={onNavigateToTimetable}
               className="px-3.5 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-bold rounded-xl border border-indigo-200 transition flex items-center gap-1.5 cursor-pointer shadow-2xs"
             >
               <Calendar className="w-3.5 h-3.5" />
-              <span>Day-Wise Timetable</span>
+              <span>Timetable</span>
             </button>
           )}
 
-          {onNavigateToBulkImport && (
-            <button
-              onClick={onNavigateToBulkImport}
-              className="px-3.5 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-bold rounded-xl border border-indigo-200 transition flex items-center gap-1.5 cursor-pointer shadow-2xs"
-            >
-              <FileSpreadsheet className="w-3.5 h-3.5" />
-              <span>Bulk Data Intake (1000+)</span>
-            </button>
-          )}
           {onNavigateToReports && (
             <button
               onClick={() => {
@@ -543,7 +526,7 @@ export const DirectorDashboard: React.FC<DirectorDashboardProps> = ({
               className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl shadow-sm transition flex items-center gap-1.5 cursor-pointer"
             >
               <BarChart3 className="w-3.5 h-3.5" />
-              <span>View Class-Wise Report</span>
+              <span>Class-Wise Reports</span>
             </button>
           )}
         </div>
@@ -571,8 +554,8 @@ export const DirectorDashboard: React.FC<DirectorDashboardProps> = ({
             </div>
             <p className="text-[11px] text-slate-500 mt-0.5">
               {selectedDeptId === 'all'
-                ? 'Consolidated view of all academic departments. Switch to a specific department to isolate data.'
-                : `Active isolation filter: Showing student attendance, faculty count, and live classes strictly for ${selectedDeptObj?.name || 'selected department'}.`}
+                ? 'All academic departments'
+                : selectedDeptObj?.name || 'Selected Department'}
             </p>
           </div>
         </div>

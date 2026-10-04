@@ -129,6 +129,8 @@ export const ManualAttendanceModal: React.FC<ManualAttendanceModalProps> = ({
 
     async function loadAcademicMeta() {
       setLoadingMeta(true);
+      setRoster([]);
+      setSubjectsList([]);
       try {
         // Fetch departments first
         const { data: depts } = await supabase
@@ -174,18 +176,22 @@ export const ManualAttendanceModal: React.FC<ManualAttendanceModalProps> = ({
               } else {
                 setSectionsList([]);
                 setSelectedSectionId('');
+                setRoster([]);
               }
             } else {
               setSectionsList([]);
               setSelectedSectionId('');
+              setRoster([]);
             }
           } else {
             setSectionsList([]);
             setSelectedSectionId('');
+            setRoster([]);
           }
         } else {
           setSectionsList([]);
           setSelectedSectionId('');
+          setRoster([]);
         }
 
         // Fetch campuses for classrooms
@@ -266,7 +272,7 @@ export const ManualAttendanceModal: React.FC<ManualAttendanceModalProps> = ({
 
   // 3. Fetch students of the selected section and populate default 'present' roster
   useEffect(() => {
-    if (!selectedSectionId) {
+    if (!selectedSectionId || !selectedInstitutionId) {
       setRoster([]);
       return;
     }
@@ -277,10 +283,11 @@ export const ManualAttendanceModal: React.FC<ManualAttendanceModalProps> = ({
         const { data: students, error } = await supabase
           .from('students')
           .select(`
-            id, roll_number, branch,
+            id, roll_number, branch, institution_id,
             profile:profiles(first_name, last_name, email)
           `)
           .eq('current_section_id', selectedSectionId)
+          .eq('institution_id', selectedInstitutionId)
           .order('roll_number');
 
         if (error) throw error;
@@ -304,7 +311,7 @@ export const ManualAttendanceModal: React.FC<ManualAttendanceModalProps> = ({
     }
 
     loadSectionStudents();
-  }, [selectedSectionId]);
+  }, [selectedSectionId, selectedInstitutionId]);
 
   // Batch actions
   const handleMarkAll = (status: 'present' | 'absent') => {
@@ -498,49 +505,27 @@ export const ManualAttendanceModal: React.FC<ManualAttendanceModalProps> = ({
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      title="Ad-Hoc / Manual Class Attendance Register"
+      title="Manual Attendance"
       maxWidth="4xl"
     >
-      <div className="space-y-6">
-        {/* Banner Explaining Use Cases (Guest, Library, Timetable abnormality) */}
-        <div className="bg-indigo-50/70 border border-indigo-200/80 rounded-2xl p-4 flex items-start gap-3">
-          <Sparkles className="w-5 h-5 text-indigo-600 shrink-0 mt-0.5" />
-          <div className="text-xs">
-            <h4 className="font-bold text-indigo-950">
-              Special Lectures, Library Sessions &amp; Timetable Adjustments
-            </h4>
-            <p className="text-indigo-800/80 mt-0.5">
-              Use this register when classroom smartboard QR is not used (e.g., Guest Lecture in Auditorium, Library Reference Period, Seminar, or Timetable Abnormality).
-              All marked students will directly sync with institutional reports and statutory eligibility records.
-            </p>
-          </div>
-        </div>
-
-        {/* Target School / Institution (For multi-school teaching & cross-institutional lecture routing) */}
+      <div className="space-y-5">
+        {/* Target School / Institution */}
         {availableInstitutions.length > 0 && (
-          <div className="bg-slate-50 border border-slate-200/90 rounded-2xl p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-xl bg-indigo-50 border border-indigo-200 flex items-center justify-center shrink-0">
-                <Building2 className="w-4 h-4 text-indigo-600" />
-              </div>
-              <div>
-                <div className="flex items-center gap-1.5">
-                  <span className="text-xs font-bold text-slate-800">Target School / College</span>
-                  <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800">
-                    Multi-School Sync
-                  </span>
-                </div>
-                <p className="text-[11px] text-slate-500">
-                  Select the school whose students you are teaching. Lecture attendance &amp; approval report will route exclusively to this school's Director.
-                </p>
-              </div>
+          <div className="bg-slate-50 border border-slate-200/90 rounded-xl p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <Building2 className="w-4 h-4 text-indigo-600 shrink-0" />
+              <span className="text-xs font-bold text-slate-800">Target School / College</span>
             </div>
             <select
               value={selectedInstitutionId}
               onChange={(e) => {
-                setSelectedInstitutionId(e.target.value);
+                const newId = e.target.value;
+                setSelectedInstitutionId(newId);
                 setSelectedSectionId('');
                 setSelectedOfferingId('');
+                setSectionsList([]);
+                setSubjectsList([]);
+                setRoster([]);
               }}
               className="p-2 text-xs border border-slate-300 rounded-xl bg-white font-bold text-indigo-950 focus:ring-2 focus:ring-indigo-500 min-w-[240px]"
             >

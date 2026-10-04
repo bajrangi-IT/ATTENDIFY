@@ -439,6 +439,28 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         return null;
       };
 
+      // Helper to check school/campus focus
+      // Directors and Students are campus-focused and must match their assigned school
+      // Faculty logins are independent across schools
+      const checkCampusMismatch = async (p: Profile) => {
+        if (p.role === 'director' || p.role === 'student') {
+          if (targetInstitutionId && p.institution_id && p.institution_id !== targetInstitutionId) {
+            await supabase.auth.signOut();
+            setIsAuthenticated(false);
+            setProfile(null);
+            setUser(null);
+            setFacultyRecord(null);
+            setStudentRecord(null);
+            localStorage.removeItem('campusattend_auth_user');
+
+            return {
+              error: `Access Denied: Your account is registered under a different School/Campus. Please select your assigned school to sign in.`
+            };
+          }
+        }
+        return null;
+      };
+
       // 1. Check custom registered directors/profiles in persistent storage
       const customProfiles: (Profile & { password?: string })[] = JSON.parse(
         localStorage.getItem('campusattend_custom_profiles') || '[]'
@@ -455,7 +477,13 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         const roleErr = await checkRoleMismatch(matchedCustom.role);
         if (roleErr) return roleErr;
 
-        const instId = matchedCustom.institution_id || targetInstitutionId || DEFAULT_INSTITUTION_ID;
+        const campusErr = await checkCampusMismatch(matchedCustom);
+        if (campusErr) return campusErr;
+
+        const instId = matchedCustom.role === 'faculty'
+          ? (targetInstitutionId || matchedCustom.institution_id || DEFAULT_INSTITUTION_ID)
+          : (matchedCustom.institution_id || targetInstitutionId || DEFAULT_INSTITUTION_ID);
+
         await loadProfileDetails(matchedCustom, instId);
         setIsAuthenticated(true);
         localStorage.setItem(
@@ -489,7 +517,13 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           const roleErr = await checkRoleMismatch(fallbackProf.role);
           if (roleErr) return roleErr;
 
-          const instId = fallbackProf.institution_id || targetInstitutionId || DEFAULT_INSTITUTION_ID;
+          const campusErr = await checkCampusMismatch(fallbackProf);
+          if (campusErr) return campusErr;
+
+          const instId = fallbackProf.role === 'faculty'
+            ? (targetInstitutionId || fallbackProf.institution_id || DEFAULT_INSTITUTION_ID)
+            : (fallbackProf.institution_id || targetInstitutionId || DEFAULT_INSTITUTION_ID);
+
           const scopedProf = { ...fallbackProf, institution_id: instId };
           await loadProfileDetails(scopedProf, instId);
           setIsAuthenticated(true);
@@ -520,7 +554,13 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           const roleErr = await checkRoleMismatch(prof.role);
           if (roleErr) return roleErr;
 
-          const instId = prof.institution_id || targetInstitutionId || DEFAULT_INSTITUTION_ID;
+          const campusErr = await checkCampusMismatch(prof);
+          if (campusErr) return campusErr;
+
+          const instId = prof.role === 'faculty'
+            ? (targetInstitutionId || prof.institution_id || DEFAULT_INSTITUTION_ID)
+            : (prof.institution_id || targetInstitutionId || DEFAULT_INSTITUTION_ID);
+
           await loadProfileDetails(prof, instId);
           setIsAuthenticated(true);
           localStorage.setItem(

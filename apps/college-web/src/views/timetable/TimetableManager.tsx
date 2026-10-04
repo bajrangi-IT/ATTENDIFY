@@ -24,7 +24,9 @@ import {
   ShieldCheck,
   DoorOpen,
   ArrowRight,
-  BookOpen
+  BookOpen,
+  Users,
+  Sparkles
 } from 'lucide-react';
 import { formatSectionLabel, formatSectionShortBadge } from '../../lib/academicLabels';
 import { ManualAttendanceModal, ManualAttendancePreload } from '../../components/ManualAttendanceModal';
@@ -89,6 +91,7 @@ export const TimetableManager: React.FC = () => {
   const [filterToMySchedule, setFilterToMySchedule] = useState<boolean>(true);
 
   const [entries, setEntries] = useState<TimetableEntryItem[]>([]);
+  const [conductedSessions, setConductedSessions] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
   // Single Day View selection - default to today (Monday..Saturday, or Monday if Sunday)
@@ -333,6 +336,32 @@ export const TimetableManager: React.FC = () => {
       const { data, error } = await query;
       if (error) throw error;
       setEntries((data as any) || []);
+
+      // Fetch conducted attendance sessions and reports for this institution (both scheduled & manual)
+      let sessQuery = supabase
+        .from('attendance_sessions')
+        .select(`
+          id, session_date, start_time, end_time, session_type, status, cancellation_reason,
+          section_id, subject_offering_id, classroom_id, faculty_id, timetable_entry_id, institution_id,
+          subject_offering:subject_offerings(subject:subjects(name, code)),
+          section:sections(id, name, semester:semesters(semester_number, program:programs(name, code))),
+          classroom:classrooms(room_number, building),
+          faculty:faculty(employee_code, profile:profiles(first_name, last_name)),
+          report:attendance_session_reports(present_count, absent_count, late_count, excused_count, total_enrolled, attendance_percentage, status)
+        `)
+        .eq('institution_id', instId)
+        .order('session_date', { ascending: false })
+        .order('start_time', { ascending: false })
+        .limit(100);
+
+      if (isFaculty && facultyRecord?.id && filterToMySchedule) {
+        sessQuery = sessQuery.eq('faculty_id', facultyRecord.id);
+      } else if (selectedSectionId !== 'ALL') {
+        sessQuery = sessQuery.eq('section_id', selectedSectionId);
+      }
+
+      const { data: sessData } = await sessQuery;
+      setConductedSessions(sessData || []);
     } catch (err: any) {
       console.error('Failed to load timetable:', err);
       addToast({
@@ -348,6 +377,19 @@ export const TimetableManager: React.FC = () => {
   useEffect(() => {
     loadTimetableData();
   }, [selectedSectionId, profile?.institution_id, currentInstitutionId, filterToMySchedule, facultyRecord?.id]);
+
+  // Synchronize on global attendance session & timetable changes
+  useEffect(() => {
+    const handleSync = () => {
+      loadTimetableData();
+    };
+    window.addEventListener('campusattend:sessions-updated', handleSync);
+    window.addEventListener('campusattend:timetable-updated', handleSync);
+    return () => {
+      window.removeEventListener('campusattend:sessions-updated', handleSync);
+      window.removeEventListener('campusattend:timetable-updated', handleSync);
+    };
+  }, [profile?.institution_id, currentInstitutionId]);
 
   // Load Timetable Change History
   const loadChangeHistory = async () => {
@@ -742,9 +784,27 @@ export const TimetableManager: React.FC = () => {
           {(() => {
             const activeDayObj = DAYS.find((d) => d.id === selectedDayId) || DAYS[0];
             const isSelectedDayToday = (new Date().getDay() === 0 ? 7 : new Date().getDay()) === selectedDayId;
+            const todayStr = new Date().toISOString().slice(0, 10);
             const dayEntries = entries
               .filter((e) => e.day_of_week === selectedDayId)
               .sort((a, b) => a.start_time.localeCompare(b.start_time));
+
+            // Identify manual/ad-hoc attendance sessions conducted on this day
+            const manualSessionsForDay = conductedSessions.filter((s) => {
+              const isSpecial = s.session_type !== 'lecture' || Boolean(s.cancellation_reason?.startsWith('['));
+              const isNoTimetable = !s.timetable_entry_id;
+              if (!isSpecial && !isNoTimetable) return false;
+
+              if (isSelectedDayToday) {
+                return s.session_date === todayStr;
+              }
+              if (s.session_date) {
+                const d = new Date(s.session_date);
+                const dow = d.getDay() === 0 ? 7 : d.getDay();
+                return dow === selectedDayId;
+              }
+              return false;
+            });
 
             return (
               <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden">
@@ -801,7 +861,7 @@ export const TimetableManager: React.FC = () => {
 
                 {/* Day Timeline List */}
                 <div className="p-4 sm:p-6 space-y-3">
-                  {dayEntries.length === 0 ? (
+                  {dayEntries.length === 0 && manualSessionsForDay.length === 0 ? (
                     <div className="py-16 text-center text-slate-400 flex flex-col items-center justify-center">
                       <Clock className="h-10 w-10 text-slate-300 stroke-[1.5] mb-2" />
                       <h4 className="font-bold text-sm text-slate-700">No Lectures Scheduled</h4>
@@ -824,6 +884,16 @@ export const TimetableManager: React.FC = () => {
                   ) : (
                     dayEntries.map((entry) => {
                       const slotInfo = getSlotStatus(entry, isSelectedDayToday);
+                      const matchingSession = conductedSessions.find((s) => {
+                        if (s.timetable_entry_id && s.timetable_entry_id === entry.id) {
+                          return isSelectedDayToday ? s.session_date === todayStr : true;
+                        }
+                        return s.section_id === entry.section_id &&
+                               s.subject_offering_id === entry.subject_offering_id &&
+                               (isSelectedDayToday ? s.session_date === todayStr : true);
+                      });
+                      const rep = (matchingSession as any)?.report;
+
                       return (
                         <div
                           key={entry.id}
@@ -882,8 +952,63 @@ export const TimetableManager: React.FC = () => {
                             </div>
                           </div>
 
-                          {/* Action Buttons */}
-                          <div className="flex items-center flex-wrap gap-2 pt-3 lg:pt-0 border-t lg:border-t-0 border-slate-100">
+                          {/* Attendance Metrics Hover Pill & Action Buttons */}
+                          <div className="flex items-center flex-wrap gap-2.5 pt-3 lg:pt-0 border-t lg:border-t-0 border-slate-100">
+                            {/* Attendance Hover Pill */}
+                            <div className="relative group/att">
+                              <div className={`px-2.5 py-1.5 rounded-xl text-xs font-bold border transition flex items-center gap-1.5 cursor-pointer ${
+                                rep
+                                  ? 'bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100'
+                                  : 'bg-slate-50 text-slate-500 border-slate-200 hover:bg-slate-100'
+                              }`}>
+                                <Users className="w-3.5 h-3.5 text-slate-600" />
+                                <span>
+                                  {rep
+                                    ? `${rep.present_count}/${rep.total_enrolled || (rep.present_count + rep.absent_count)} Present`
+                                    : 'Attendance: Pending'}
+                                </span>
+                              </div>
+
+                              {/* Hover Tooltip / Stats Card */}
+                              <div className="absolute z-30 bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover/att:block w-56 p-3 bg-slate-900 text-white text-xs rounded-xl shadow-xl pointer-events-none transition-all">
+                                <div className="font-bold text-slate-200 border-b border-slate-700/80 pb-1 mb-2 flex items-center justify-between">
+                                  <span>Lecture Attendance</span>
+                                  {rep && (
+                                    <span className="text-[10px] uppercase font-bold text-emerald-400">
+                                      {rep.status || 'Recorded'}
+                                    </span>
+                                  )}
+                                </div>
+                                {rep ? (
+                                  <div className="space-y-1 font-mono">
+                                    <div className="flex justify-between">
+                                      <span className="text-slate-400 font-sans">Total:</span>
+                                      <span className="font-bold text-white">{rep.total_enrolled || (rep.present_count + rep.absent_count)}</span>
+                                    </div>
+                                    <div className="flex justify-between text-emerald-400">
+                                      <span className="font-sans">Present:</span>
+                                      <span className="font-bold">{rep.present_count} ({rep.attendance_percentage ?? Math.round((rep.present_count / (rep.total_enrolled || 1)) * 100)}%)</span>
+                                    </div>
+                                    <div className="flex justify-between text-rose-400">
+                                      <span className="font-sans">Absent:</span>
+                                      <span className="font-bold">{rep.absent_count}</span>
+                                    </div>
+                                    {rep.late_count > 0 && (
+                                      <div className="flex justify-between text-amber-400">
+                                        <span className="font-sans">Late:</span>
+                                        <span className="font-bold">{rep.late_count}</span>
+                                      </div>
+                                    )}
+                                  </div>
+                                ) : (
+                                  <p className="text-slate-400 text-[11px] font-sans">
+                                    No attendance session recorded for this lecture slot on this date.
+                                  </p>
+                                )}
+                                <div className="w-2 h-2 bg-slate-900 rotate-45 absolute -bottom-1 left-1/2 -translate-x-1/2"></div>
+                              </div>
+                            </div>
+
                             {/* Manual Attendance Trigger for this specific class */}
                             <button
                               onClick={() => {
@@ -901,7 +1026,7 @@ export const TimetableManager: React.FC = () => {
                               title="Mark manual attendance for this class"
                             >
                               <BookOpen className="h-3.5 w-3.5 text-emerald-600" />
-                              <span>Manual / Ad-hoc</span>
+                              <span>Manual</span>
                             </button>
 
                             {(role === 'director' || role === 'hod' || role === 'super_admin' || role === 'it_admin') && (
@@ -933,6 +1058,115 @@ export const TimetableManager: React.FC = () => {
                         </div>
                       );
                     })
+                  )}
+
+                  {/* Ad-Hoc & Special Sessions on this Day */}
+                  {manualSessionsForDay.length > 0 && (
+                    <div className="mt-6 pt-5 border-t border-slate-200">
+                      <div className="flex items-center gap-2 mb-3">
+                        <Sparkles className="w-4 h-4 text-purple-600" />
+                        <h4 className="font-black text-xs uppercase tracking-wider text-slate-800">
+                          Ad-Hoc / Special Sessions Conducted ({manualSessionsForDay.length})
+                        </h4>
+                      </div>
+                      <div className="space-y-3">
+                        {manualSessionsForDay.map((s) => {
+                          const rep = s.report;
+                          const typeLabel =
+                            s.session_type === 'guest_lecture' ? 'Guest Lecture'
+                            : s.session_type === 'library' ? 'Library Session'
+                            : s.session_type === 'seminar' ? 'Seminar / Workshop'
+                            : s.session_type === 'extra_class' ? 'Extra Class'
+                            : s.session_type === 'lab' ? 'Special Practical'
+                            : 'Manual Lecture';
+
+                          return (
+                            <div
+                              key={s.id}
+                              className="p-4 rounded-2xl border border-purple-200 bg-purple-50/40 hover:bg-purple-50/80 transition flex flex-col lg:flex-row lg:items-center justify-between gap-4 group"
+                            >
+                              <div className="flex items-center gap-3 min-w-[200px]">
+                                <div className="w-12 h-12 rounded-2xl bg-purple-100 text-purple-700 flex items-center justify-center shrink-0">
+                                  <BookOpen className="h-5 w-5" />
+                                </div>
+                                <div>
+                                  <div className="font-black text-sm text-slate-900 font-mono tracking-tight">
+                                    {formatTime12(s.start_time)} - {formatTime12(s.end_time)}
+                                  </div>
+                                  <div className="flex items-center gap-1.5 mt-1">
+                                    <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-purple-100 text-purple-800 border border-purple-200">
+                                      {typeLabel}
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+
+                              <div className="flex-1 space-y-1">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <h4 className="font-black text-sm text-slate-900">
+                                    {s.subject_offering?.subject?.name || 'Manual Session'}
+                                  </h4>
+                                  {s.section?.name && (
+                                    <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-white text-purple-900 border border-purple-200">
+                                      Section {s.section.name}
+                                    </span>
+                                  )}
+                                </div>
+                                {s.cancellation_reason && (
+                                  <p className="text-xs text-slate-600 font-medium">
+                                    {s.cancellation_reason}
+                                  </p>
+                                )}
+                                {s.faculty?.profile && (
+                                  <div className="text-[11px] text-slate-500">
+                                    Conducted by: Prof. {s.faculty.profile.first_name} {s.faculty.profile.last_name}
+                                  </div>
+                                )}
+                              </div>
+
+                              {/* Attendance Hover Card for Manual Session */}
+                              <div className="relative group/man self-start lg:self-center">
+                                <div className="px-3 py-1.5 rounded-xl bg-white border border-purple-200 text-xs font-bold text-purple-900 shadow-2xs hover:border-purple-400 transition flex items-center gap-1.5 cursor-pointer">
+                                  <Users className="w-3.5 h-3.5 text-purple-600" />
+                                  <span>
+                                    {rep
+                                      ? `${rep.present_count}/${rep.total_enrolled || (rep.present_count + rep.absent_count)} Present`
+                                      : 'Attendance Logged'}
+                                  </span>
+                                </div>
+
+                                {/* Hover Popover */}
+                                <div className="absolute z-30 bottom-full right-0 mb-2 hidden group-hover/man:block w-56 p-3 bg-slate-900 text-white text-xs rounded-xl shadow-xl pointer-events-none transition-all">
+                                  <div className="font-bold text-slate-200 border-b border-slate-700/80 pb-1 mb-2 flex items-center justify-between">
+                                    <span>Special Lecture Attendance</span>
+                                    <span className="text-[10px] uppercase font-bold text-emerald-400">Recorded</span>
+                                  </div>
+                                  {rep ? (
+                                    <div className="space-y-1 font-mono">
+                                      <div className="flex justify-between">
+                                        <span className="text-slate-400 font-sans">Total:</span>
+                                        <span className="font-bold text-white">{rep.total_enrolled || (rep.present_count + rep.absent_count)}</span>
+                                      </div>
+                                      <div className="flex justify-between text-emerald-400">
+                                        <span className="font-sans">Present:</span>
+                                        <span className="font-bold">{rep.present_count} ({rep.attendance_percentage ?? Math.round((rep.present_count / (rep.total_enrolled || 1)) * 100)}%)</span>
+                                      </div>
+                                      <div className="flex justify-between text-rose-400">
+                                        <span className="font-sans">Absent:</span>
+                                        <span className="font-bold">{rep.absent_count}</span>
+                                      </div>
+                                    </div>
+                                  ) : (
+                                    <p className="text-slate-400 text-[11px] font-sans">Attendance successfully registered.</p>
+                                  )}
+                                  <div className="w-2 h-2 bg-slate-900 rotate-45 absolute -bottom-1 right-6"></div>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
                   )}
                 </div>
               </div>
