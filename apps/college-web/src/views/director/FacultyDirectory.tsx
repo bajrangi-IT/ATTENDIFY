@@ -30,6 +30,7 @@ import {
   Sparkles,
   Key
 } from 'lucide-react';
+import { formatSectionLabel, formatSectionShortBadge } from '../../lib/academicLabels';
 
 interface FacultyItem {
   id: string;
@@ -143,7 +144,13 @@ export const FacultyDirectory: React.FC = () => {
             profile:profiles(id, first_name, last_name, email, phone_number, is_active),
             assignments:faculty_assignments(
               id, is_primary,
-              section:sections(id, name),
+              section:sections(
+                id, name,
+                semester:semesters(
+                  semester_number,
+                  program:programs(name, code)
+                )
+              ),
               subject_offering:subject_offerings(
                 subject:subjects(name, code)
               )
@@ -177,7 +184,17 @@ export const FacultyDirectory: React.FC = () => {
           const semIds = (semData || []).map((s: any) => s.id);
 
           if (semIds.length > 0) {
-            const { data: secs } = await supabase.from('sections').select('id, name').in('semester_id', semIds).order('name');
+            const { data: secs } = await supabase
+              .from('sections')
+              .select(`
+                id, name, semester_id,
+                semester:semesters(
+                  id, semester_number,
+                  program:programs(id, name, code)
+                )
+              `)
+              .in('semester_id', semIds)
+              .order('name');
             secList = secs || [];
           }
         }
@@ -570,7 +587,7 @@ export const FacultyDirectory: React.FC = () => {
                               key={asg.id}
                               className="px-2 py-0.5 bg-slate-100 border border-slate-200 rounded text-[10px] font-semibold text-slate-700"
                             >
-                              {asg.subject_offering?.subject?.code} ({asg.section?.name})
+                              {asg.subject_offering?.subject?.code} ({formatSectionShortBadge(asg.section)})
                             </span>
                           ))}
                         </div>
@@ -923,7 +940,7 @@ export const FacultyDirectory: React.FC = () => {
             >
               {sections.map((s) => (
                 <option key={s.id} value={s.id}>
-                  {s.name}
+                  {formatSectionLabel(s)}
                 </option>
               ))}
             </select>

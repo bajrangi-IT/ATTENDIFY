@@ -25,6 +25,7 @@ import {
   DoorOpen,
   ArrowRight
 } from 'lucide-react';
+import { formatSectionLabel, formatSectionShortBadge } from '../../lib/academicLabels';
 
 const DAYS = [
   { id: 1, name: 'Monday' },
@@ -192,7 +193,17 @@ export const TimetableManager: React.FC = () => {
           const semIds = semList.map((s: any) => s.id);
 
           if (semIds.length > 0) {
-            const { data: secs } = await supabase.from('sections').select('id, name, semester_id').in('semester_id', semIds).order('name');
+            const { data: secs } = await supabase
+              .from('sections')
+              .select(`
+                id, name, semester_id,
+                semester:semesters(
+                  id, semester_number,
+                  program:programs(id, name, code)
+                )
+              `)
+              .in('semester_id', semIds)
+              .order('name');
             secList = secs || [];
           }
         }
@@ -508,7 +519,7 @@ export const TimetableManager: React.FC = () => {
       return {
         'Day': dayName,
         'Time': `${e.start_time.slice(0, 5)} - ${e.end_time.slice(0, 5)}`,
-        'Section': e.section?.name || 'N/A',
+        'Section': formatSectionLabel(e.section),
         'Subject Code': e.subject_offering?.subject?.code || 'N/A',
         'Subject Name': e.subject_offering?.subject?.name || 'N/A',
         'Faculty': e.faculty?.profile ? `${e.faculty.profile.first_name} ${e.faculty.profile.last_name}` : 'N/A',
@@ -602,12 +613,12 @@ export const TimetableManager: React.FC = () => {
           <select
             value={selectedSectionId}
             onChange={(e) => setSelectedSectionId(e.target.value)}
-            className="text-xs bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+            className="text-xs bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
           >
-            <option value="ALL">All Sections</option>
+            <option value="ALL">All Classes &amp; Sections</option>
             {sections.map((s) => (
               <option key={s.id} value={s.id}>
-                {s.name}
+                {formatSectionLabel(s)}
               </option>
             ))}
           </select>
@@ -666,8 +677,8 @@ export const TimetableManager: React.FC = () => {
                           <span className="text-[11px] font-bold text-indigo-700 font-mono">
                             {entry.start_time.slice(0, 5)} - {entry.end_time.slice(0, 5)}
                           </span>
-                          <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-700">
-                            {entry.section?.name || 'Section'}
+                          <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-indigo-50 text-indigo-800 border border-indigo-200">
+                            {formatSectionShortBadge(entry.section)}
                           </span>
                         </div>
 
@@ -765,11 +776,11 @@ export const TimetableManager: React.FC = () => {
               <select
                 value={formSectionId}
                 onChange={(e) => setFormSectionId(e.target.value)}
-                className="w-full mt-1 p-2 text-xs border border-slate-300 rounded-xl bg-white"
+                className="w-full mt-1 p-2 text-xs border border-slate-300 rounded-xl bg-white font-medium text-slate-800"
               >
                 {sections.map((s) => (
                   <option key={s.id} value={s.id}>
-                    {s.name}
+                    {formatSectionLabel(s)}
                   </option>
                 ))}
               </select>

@@ -26,6 +26,7 @@ import {
   FileSpreadsheet,
   FileText
 } from 'lucide-react';
+import { formatSectionLabel } from '../../lib/academicLabels';
 
 interface Department {
   id: string;
@@ -238,7 +239,13 @@ export const InstitutionalReportsView: React.FC = () => {
         // Fetch sections for this semester
         const { data: secData, error: secErr } = await supabase
           .from('sections')
-          .select('id, name, semester_id')
+          .select(`
+            id, name, semester_id,
+            semester:semesters(
+              id, semester_number,
+              program:programs(id, name, code)
+            )
+          `)
           .eq('semester_id', selectedSemesterId)
           .order('name');
 
@@ -766,7 +773,7 @@ export const InstitutionalReportsView: React.FC = () => {
               </option>
               {sections.map((sec) => (
                 <option key={sec.id} value={sec.id}>
-                  Section {sec.name}
+                  {formatSectionLabel(sec)}
                 </option>
               ))}
             </select>

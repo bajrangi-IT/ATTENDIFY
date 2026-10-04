@@ -16,6 +16,7 @@ import {
   Download,
   BookOpen
 } from 'lucide-react';
+import { formatSectionLabel, formatSectionShortBadge } from '../../lib/academicLabels';
 
 export const TeacherReports: React.FC = () => {
   const { facultyRecord, profile, currentInstitutionId } = useAuth();
@@ -74,26 +75,20 @@ export const TeacherReports: React.FC = () => {
         });
 
         (coordData || []).forEach((sec: any) => {
-          const prog = sec.semester?.program?.name || sec.semester?.program?.code || 'Degree';
-          const sem = sec.semester?.semester_number || 1;
-          const yearNum = Math.ceil(sem / 2);
           secMap.set(sec.id, {
             id: sec.id,
             name: sec.name,
-            label: `Section ${sec.name} (${prog} Year ${yearNum} Sem ${sem}) [Coordinator]`,
+            label: formatSectionLabel(sec, '[Class Coordinator]'),
             isCoordinator: true
           });
         });
 
         (ttData || []).forEach((item: any) => {
           if (item.section && !secMap.has(item.section.id)) {
-            const prog = item.section.semester?.program?.name || item.section.semester?.program?.code || 'Degree';
-            const sem = item.section.semester?.semester_number || 1;
-            const yearNum = Math.ceil(sem / 2);
             secMap.set(item.section.id, {
               id: item.section.id,
               name: item.section.name,
-              label: `Section ${item.section.name} (${prog} Year ${yearNum} Sem ${sem})`,
+              label: formatSectionLabel(item.section, '[Teaching Faculty]'),
               isCoordinator: false
             });
           }
@@ -146,7 +141,16 @@ export const TeacherReports: React.FC = () => {
         // Fetch students strictly enrolled in the teacher's assigned section(s)
         const { data: students, error: stErr } = await supabase
           .from('students')
-          .select('id, roll_number, registration_number, branch, current_section_id, current_section:sections(name)')
+          .select(`
+            id, roll_number, registration_number, branch, current_section_id,
+            current_section:sections(
+              id, name,
+              semester:semesters(
+                semester_number,
+                program:programs(name, code)
+              )
+            )
+          `)
           .in('current_section_id', targetSectionIds);
 
         if (stErr) throw stErr;
@@ -176,7 +180,7 @@ export const TeacherReports: React.FC = () => {
           return {
             ...row,
             branch: meta?.branch || 'CSE',
-            section_name: meta?.current_section?.name || 'Class'
+            section_name: formatSectionShortBadge(meta?.current_section) || meta?.current_section?.name || 'Class'
           };
         });
 

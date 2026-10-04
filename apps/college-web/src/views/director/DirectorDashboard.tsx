@@ -22,6 +22,7 @@ import {
   BarChart3,
   GraduationCap
 } from 'lucide-react';
+import { formatSectionLabel, formatSectionShortBadge } from '../../lib/academicLabels';
 
 interface DirectorDashboardProps {
   onNavigateToReports?: () => void;
@@ -723,7 +724,9 @@ export const DirectorDashboard: React.FC<DirectorDashboardProps> = ({
                       <MapPin className="h-3 w-3 text-slate-400" />
                       Room {session.classroom?.room_number} ({session.classroom?.building})
                     </span>
-                    <span>Section: {session.section?.name}</span>
+                    <span>
+                      Class: <strong className="text-slate-700">{formatSectionLabel(session.section)}</strong>
+                    </span>
                   </div>
                 </div>
 
@@ -781,7 +784,7 @@ export const DirectorDashboard: React.FC<DirectorDashboardProps> = ({
               ) : (
                 sectionsList.map((sec) => (
                   <option key={sec.id} value={sec.id}>
-                    Class: {sec.name} — {sec.semester?.program?.code || sec.semester?.program?.name} (Sem {sec.semester?.semester_number})
+                    {formatSectionLabel(sec)}
                   </option>
                 ))
               )}
@@ -805,7 +808,7 @@ export const DirectorDashboard: React.FC<DirectorDashboardProps> = ({
             <div>
               <span className="text-[10px] uppercase font-bold text-slate-400">Class &amp; Semester</span>
               <div className="font-bold text-slate-900 mt-0.5">
-                {selectedSectionObj.name} • Sem {selectedSectionObj.semester?.semester_number}
+                {formatSectionLabel(selectedSectionObj)}
               </div>
             </div>
             <div>

@@ -21,6 +21,7 @@ import {
   BadgeAlert,
   CalendarDays
 } from 'lucide-react';
+import { formatSectionLabel, formatSectionShortBadge } from '../lib/academicLabels';
 
 export type SearchResultType = 'student' | 'faculty' | 'section';
 
@@ -153,11 +154,12 @@ export const GlobalSearch: React.FC = () => {
             secName.toLowerCase().includes(termLower) ||
             progName.toLowerCase().includes(termLower)
           ) {
+            const secLabel = formatSectionLabel(st.current_section);
             combinedResults.push({
               id: st.id,
               type: 'student',
               title: fullName || roll || 'Student',
-              subtitle: `Student • Branch: ${branch || 'General'} • Section: ${secName || 'Assigned'} • Roll: ${roll}`,
+              subtitle: `Student • Roll: ${roll} • Branch: ${branch || 'General'} • ${secLabel}`,
               metadata: {
                 avatarText: (st.profile?.first_name?.[0] || 'S').toUpperCase(),
                 branch,
@@ -268,11 +270,12 @@ export const GlobalSearch: React.FC = () => {
                   `class ${secName}`.toLowerCase().includes(termLower) ||
                   coordName.toLowerCase().includes(termLower)
                 ) {
+                  const fullLabel = formatSectionLabel(sec);
                   combinedResults.push({
                     id: sec.id,
                     type: 'section',
-                    title: `Class ${secName} (${progCode || progName} Sem ${semNum})`,
-                    subtitle: `Class / Section • Sem ${semNum} • Coordinator: ${coordName || 'Faculty Assigned'}`,
+                    title: fullLabel,
+                    subtitle: `Class / Section • ${fullLabel}${coordName ? ` • Coordinator: ${coordName}` : ''}`,
                     metadata: {
                       sectionName: secName,
                       sectionId: sec.id,
@@ -353,7 +356,13 @@ export const GlobalSearch: React.FC = () => {
           .from('timetable_entries')
           .select(`
             id, day_of_week, start_time, end_time,
-            section:sections(id, name),
+            section:sections(
+              id, name,
+              semester:semesters(
+                semester_number,
+                program:programs(name, code)
+              )
+            ),
             classroom:classrooms(room_number, building),
             faculty:faculty(id, employee_code, profile:profiles(first_name, last_name)),
             subject_offering:subject_offerings(subject:subjects(code, name))
@@ -386,7 +395,7 @@ export const GlobalSearch: React.FC = () => {
             faculty_name: e.faculty?.profile
               ? `Prof. ${e.faculty.profile.first_name} ${e.faculty.profile.last_name}`
               : 'Assigned Faculty',
-            section_name: e.section?.name || 'Class',
+            section_name: formatSectionShortBadge(e.section),
             is_live: isLive,
             is_past: isPast,
             is_upcoming: isUpcoming,
