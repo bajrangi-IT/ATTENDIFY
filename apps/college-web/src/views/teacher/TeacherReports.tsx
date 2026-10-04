@@ -18,10 +18,13 @@ import {
 } from 'lucide-react';
 
 export const TeacherReports: React.FC = () => {
-  const { facultyRecord } = useAuth();
+  const { facultyRecord, profile, currentInstitutionId } = useAuth();
   const toast = useToast();
   const [loading, setLoading] = useState(true);
   const [reportsData, setReportsData] = useState<any[]>([]);
+  const [assignedSections, setAssignedSections] = useState<any[]>([]);
+  const [selectedSectionId, setSelectedSectionId] = useState<string>('all');
+  const [selectedBranch, setSelectedBranch] = useState<string>('all');
   const [selectedSubject, setSelectedSubject] = useState<string>('all');
   const [selectedThreshold, setSelectedThreshold] = useState<string>('all');
   const [searchTerm, setSearchTerm] = useState('');
@@ -30,22 +33,154 @@ export const TeacherReports: React.FC = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
 
+  // 1. Fetch sections assigned strictly to this faculty member
+  useEffect(() => {
+    async function loadAssignedSections() {
+      if (!facultyRecord?.id) return;
+      try {
+        const [
+          { data: faData },
+          { data: coordData },
+          { data: ttData }
+        ] = await Promise.all([
+          supabase
+            .from('faculty_assignments')
+            .select('section_id, section:sections(id, name, semester:semesters(semester_number, program:programs(name, code)))')
+            .eq('faculty_id', facultyRecord.id),
+          supabase
+            .from('sections')
+            .select('id, name, semester:semesters(semester_number, program:programs(name, code))')
+            .eq('class_coordinator_id', facultyRecord.id),
+          supabase
+            .from('timetable_entries')
+            .select('section_id, section:sections(id, name, semester:semesters(semester_number, program:programs(name, code)))')
+            .eq('faculty_id', facultyRecord.id)
+        ]);
+
+        const secMap = new Map<string, any>();
+
+        (faData || []).forEach((item: any) => {
+          if (item.section) {
+            const prog = item.section.semester?.program?.name || item.section.semester?.program?.code || 'Degree';
+            const sem = item.section.semester?.semester_number || 1;
+            const yearNum = Math.ceil(sem / 2);
+            secMap.set(item.section.id, {
+              id: item.section.id,
+              name: item.section.name,
+              label: `Section ${item.section.name} (${prog} Year ${yearNum} Sem ${sem})`,
+              isCoordinator: false
+            });
+          }
+        });
+
+        (coordData || []).forEach((sec: any) => {
+          const prog = sec.semester?.program?.name || sec.semester?.program?.code || 'Degree';
+          const sem = sec.semester?.semester_number || 1;
+          const yearNum = Math.ceil(sem / 2);
+          secMap.set(sec.id, {
+            id: sec.id,
+            name: sec.name,
+            label: `Section ${sec.name} (${prog} Year ${yearNum} Sem ${sem}) [Coordinator]`,
+            isCoordinator: true
+          });
+        });
+
+        (ttData || []).forEach((item: any) => {
+          if (item.section && !secMap.has(item.section.id)) {
+            const prog = item.section.semester?.program?.name || item.section.semester?.program?.code || 'Degree';
+            const sem = item.section.semester?.semester_number || 1;
+            const yearNum = Math.ceil(sem / 2);
+            secMap.set(item.section.id, {
+              id: item.section.id,
+              name: item.section.name,
+              label: `Section ${item.section.name} (${prog} Year ${yearNum} Sem ${sem})`,
+              isCoordinator: false
+            });
+          }
+        });
+
+        const sectionList = Array.from(secMap.values());
+        setAssignedSections(sectionList);
+        if (sectionList.length > 0 && selectedSectionId === 'all') {
+          setSelectedSectionId(sectionList[0].id);
+        }
+      } catch (err: any) {
+        console.error('Error fetching assigned sections for faculty:', err);
+      }
+    }
+
+    loadAssignedSections();
+  }, [facultyRecord?.id]);
+
+  // 2. Fetch attendance reports for this faculty's assigned sections
   useEffect(() => {
     async function fetchReports() {
       setLoading(true);
       try {
-        let query = supabase
-          .from('v_student_attendance_summary')
-          .select('*');
-
-        if (facultyRecord?.department_id) {
-          query = query.eq('department_id', facultyRecord.department_id);
+        if (!facultyRecord?.id) {
+          setReportsData([]);
+          setLoading(false);
+          return;
         }
 
-        const { data, error } = await query.order('roll_number');
+        // Determine target section IDs
+        let targetSectionIds: string[] = [];
+        if (selectedSectionId !== 'all') {
+          targetSectionIds = [selectedSectionId];
+        } else if (assignedSections.length > 0) {
+          targetSectionIds = assignedSections.map((s) => s.id);
+        }
 
-        if (error) throw error;
-        setReportsData(data || []);
+        if (targetSectionIds.length === 0) {
+          // If no assigned sections mapped yet, fallback to department students
+          let fallbackQuery = supabase.from('v_student_attendance_summary').select('*');
+          if (facultyRecord?.department_id) {
+            fallbackQuery = fallbackQuery.eq('department_id', facultyRecord.department_id);
+          }
+          const { data } = await fallbackQuery.order('roll_number');
+          setReportsData(data || []);
+          setLoading(false);
+          return;
+        }
+
+        // Fetch students strictly enrolled in the teacher's assigned section(s)
+        const { data: students, error: stErr } = await supabase
+          .from('students')
+          .select('id, roll_number, registration_number, branch, current_section_id, current_section:sections(name)')
+          .in('current_section_id', targetSectionIds);
+
+        if (stErr) throw stErr;
+
+        if (!students || students.length === 0) {
+          setReportsData([]);
+          setLoading(false);
+          return;
+        }
+
+        const studentIds = students.map((s) => s.id);
+        const studentMetaMap = new Map<string, any>();
+        students.forEach((s) => studentMetaMap.set(s.id, s));
+
+        // Fetch attendance summaries for these student IDs
+        const { data: sumRows, error: sumErr } = await supabase
+          .from('v_student_attendance_summary')
+          .select('*')
+          .in('student_id', studentIds)
+          .order('roll_number');
+
+        if (sumErr) throw sumErr;
+
+        // Enrich summary rows with student's branch and section name
+        const enriched = (sumRows || []).map((row: any) => {
+          const meta = studentMetaMap.get(row.student_id);
+          return {
+            ...row,
+            branch: meta?.branch || 'CSE',
+            section_name: meta?.current_section?.name || 'Class'
+          };
+        });
+
+        setReportsData(enriched);
       } catch (err: any) {
         console.error('Error fetching reports:', err);
         toast.error('Failed to load reports', err.message);
@@ -55,7 +190,7 @@ export const TeacherReports: React.FC = () => {
     }
 
     fetchReports();
-  }, [facultyRecord?.department_id, toast]);
+  }, [facultyRecord?.id, selectedSectionId, assignedSections.length]);
 
   // Unique subjects for filter
   const subjectsList = useMemo(() => {
@@ -64,6 +199,11 @@ export const TeacherReports: React.FC = () => {
       map.set(r.subject_code, `${r.subject_code} - ${r.subject_name}`);
     });
     return Array.from(map.entries());
+  }, [reportsData]);
+
+  // Unique branches for filter
+  const branchesList = useMemo(() => {
+    return Array.from(new Set(reportsData.map((r: any) => r.branch).filter(Boolean)));
   }, [reportsData]);
 
   // Filtering
@@ -75,10 +215,11 @@ export const TeacherReports: React.FC = () => {
 
       const matchesSubject = selectedSubject === 'all' || item.subject_code === selectedSubject;
       const matchesThreshold = selectedThreshold === 'all' || item.threshold_status === selectedThreshold;
+      const matchesBranch = selectedBranch === 'all' || item.branch === selectedBranch;
 
-      return matchesSearch && matchesSubject && matchesThreshold;
+      return matchesSearch && matchesSubject && matchesThreshold && matchesBranch;
     });
-  }, [reportsData, searchTerm, selectedSubject, selectedThreshold]);
+  }, [reportsData, searchTerm, selectedSubject, selectedThreshold, selectedBranch]);
 
   const paginatedData = useMemo(() => {
     const from = (currentPage - 1) * pageSize;
@@ -204,6 +345,42 @@ export const TeacherReports: React.FC = () => {
           </div>
 
           <div className="flex flex-wrap items-center gap-2 text-xs">
+            {/* Assigned Class / Section Selector */}
+            <select
+              value={selectedSectionId}
+              onChange={(e) => {
+                setSelectedSectionId(e.target.value);
+                setCurrentPage(1);
+              }}
+              className="py-1.5 px-3 bg-indigo-50/70 text-indigo-900 border border-indigo-200 rounded-xl font-bold"
+            >
+              <option value="all">All Assigned Classes ({assignedSections.length})</option>
+              {assignedSections.map((sec) => (
+                <option key={sec.id} value={sec.id}>
+                  {sec.label}
+                </option>
+              ))}
+            </select>
+
+            {/* Branch Selector (e.g., CSE, CS, DS) */}
+            {branchesList.length > 0 && (
+              <select
+                value={selectedBranch}
+                onChange={(e) => {
+                  setSelectedBranch(e.target.value);
+                  setCurrentPage(1);
+                }}
+                className="py-1.5 px-3 bg-slate-50 border border-slate-200 rounded-xl font-semibold"
+              >
+                <option value="all">All Branches</option>
+                {branchesList.map((b: string) => (
+                  <option key={b} value={b}>
+                    Branch: {b}
+                  </option>
+                ))}
+              </select>
+            )}
+
             {/* Subject Selector */}
             <select
               value={selectedSubject}
@@ -251,7 +428,7 @@ export const TeacherReports: React.FC = () => {
               <thead className="bg-slate-50 text-slate-500 uppercase font-bold tracking-wider text-[10px] border-b border-slate-200">
                 <tr>
                   <th className="py-3 px-4">Roll Number</th>
-                  <th className="py-3 px-4">Student Name</th>
+                  <th className="py-3 px-4">Student &amp; Class</th>
                   <th className="py-3 px-4">Course / Subject</th>
                   <th className="py-3 px-4 text-center">Conducted</th>
                   <th className="py-3 px-4 text-center">Attended</th>
@@ -264,7 +441,19 @@ export const TeacherReports: React.FC = () => {
                 {paginatedData.map((row) => (
                   <tr key={`${row.student_id}_${row.subject_code}`} className="hover:bg-slate-50/80 transition-colors">
                     <td className="py-3.5 px-4 font-mono font-bold text-slate-900">{row.roll_number}</td>
-                    <td className="py-3.5 px-4 font-semibold text-slate-800">{row.student_name}</td>
+                    <td className="py-3.5 px-4">
+                      <div className="font-semibold text-slate-800">{row.student_name}</div>
+                      <div className="flex items-center gap-1.5 mt-0.5">
+                        <span className="text-[10px] font-bold px-1.5 py-0.2 bg-slate-100 text-slate-700 rounded border border-slate-200">
+                          {row.branch || 'General'}
+                        </span>
+                        {row.section_name && (
+                          <span className="text-[10px] text-slate-400 font-medium">
+                            {row.section_name}
+                          </span>
+                        )}
+                      </div>
+                    </td>
                     <td className="py-3.5 px-4">
                       <span className="font-bold text-indigo-700">{row.subject_code}</span>: {row.subject_name}
                     </td>

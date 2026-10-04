@@ -172,7 +172,7 @@ const MainAppContent: React.FC = () => {
           {/* Director Views */}
           {activeTab === 'director-dashboard' && (
             <DirectorDashboard
-              onNavigateToReports={() => setActiveTab('director-approvals')}
+              onNavigateToReports={() => setActiveTab('institutional-reports')}
               onNavigateToStudents={() => setActiveTab('student-directory')}
               onNavigateToBulkImport={() => setActiveTab('bulk-import')}
               onNavigateToAcademicSetup={() => setActiveTab('academic-setup')}

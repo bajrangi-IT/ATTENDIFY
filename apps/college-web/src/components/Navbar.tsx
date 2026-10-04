@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import { Modal } from './ui/Modal';
+import { GlobalSearch } from './GlobalSearch';
 import {
   GraduationCap,
   Building2,
@@ -239,21 +240,9 @@ export const Navbar: React.FC<NavbarProps> = ({
         </div>
       </div>
 
-      {/* Global Search Bar (Desktop only) */}
-      <div className="hidden lg:flex items-center flex-1 max-w-md mx-8">
-        <div className="relative w-full">
-          <Search className="h-4 w-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-          <input
-            type="text"
-            placeholder="Global search students, faculty, classrooms, courses..."
-            value={searchQuery}
-            onChange={(e) => {
-              setSearchQuery(e.target.value);
-              onSearch?.(e.target.value);
-            }}
-            className="w-full pl-9 pr-4 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600 transition"
-          />
-        </div>
+      {/* Global Search Bar (Active across Director, Teacher & Student portals) */}
+      <div className="flex items-center flex-1 max-w-xs sm:max-w-sm md:max-w-md mx-2 sm:mx-6">
+        <GlobalSearch />
       </div>
 
       {/* Role Display, Notifications & Profile */}

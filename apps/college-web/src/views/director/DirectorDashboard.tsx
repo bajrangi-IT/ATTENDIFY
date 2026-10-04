@@ -18,7 +18,9 @@ import {
   XCircle,
   RefreshCw,
   Filter,
-  CheckCircle2
+  CheckCircle2,
+  BarChart3,
+  GraduationCap
 } from 'lucide-react';
 
 interface DirectorDashboardProps {
@@ -41,6 +43,12 @@ export const DirectorDashboard: React.FC<DirectorDashboardProps> = ({
   // Department isolation state
   const [departmentsList, setDepartmentsList] = useState<any[]>([]);
   const [selectedDeptId, setSelectedDeptId] = useState<string>('all');
+
+  // Class-wise viewer state
+  const [sectionsList, setSectionsList] = useState<any[]>([]);
+  const [selectedSectionId, setSelectedSectionId] = useState<string>('');
+  const [sectionStudents, setSectionStudents] = useState<any[]>([]);
+  const [loadingSectionStudents, setLoadingSectionStudents] = useState<boolean>(false);
 
   // Raw fetched metrics
   const [rawFaculty, setRawFaculty] = useState<any[]>([]);
@@ -188,6 +196,45 @@ export const DirectorDashboard: React.FC<DirectorDashboardProps> = ({
           };
         });
         setDepartmentStats(deptList);
+
+        // Fetch Sections for Class-Wise Report view
+        let secItems: any[] = [];
+        if (deptIds.length > 0) {
+          const { data: progData } = await supabase
+            .from('programs')
+            .select('id, name, code, department_id')
+            .in('department_id', deptIds);
+          const progIds = (progData || []).map((p: any) => p.id);
+          if (progIds.length > 0) {
+            const { data: semData } = await supabase
+              .from('semesters')
+              .select('id, semester_number, program_id')
+              .in('program_id', progIds);
+            const semIds = (semData || []).map((s: any) => s.id);
+            if (semIds.length > 0) {
+              const { data: secData } = await supabase
+                .from('sections')
+                .select(`
+                  id, name, capacity, semester_id, class_coordinator_id,
+                  semester:semesters(
+                    id, semester_number,
+                    program:programs(id, name, code, department_id)
+                  ),
+                  coordinator:faculty(
+                    id,
+                    profile:profiles(first_name, last_name)
+                  )
+                `)
+                .in('semester_id', semIds)
+                .order('name');
+              secItems = secData || [];
+            }
+          }
+        }
+        setSectionsList(secItems);
+        if (secItems.length > 0) {
+          setSelectedSectionId((prev) => prev || secItems[0].id);
+        }
       } catch (err: any) {
         console.error('Error loading director metrics:', err);
         toast.error('Failed to load institution metrics', err.message);
@@ -230,6 +277,110 @@ export const DirectorDashboard: React.FC<DirectorDashboardProps> = ({
       window.removeEventListener('campusattend:sessions-updated', handleSync);
     };
   }, [toast, profile?.institution_id, currentInstitutionId]);
+
+  // Fetch students for selected section in Class-Wise Report Explorer
+  useEffect(() => {
+    if (!selectedSectionId) {
+      setSectionStudents([]);
+      return;
+    }
+    let isSubscribed = true;
+    async function loadClassStudents() {
+      setLoadingSectionStudents(true);
+      try {
+        const { data: studs, error: stErr } = await supabase
+          .from('students')
+          .select(`
+            id, roll_number, branch,
+            profile:profiles(first_name, last_name, email)
+          `)
+          .eq('current_section_id', selectedSectionId)
+          .order('roll_number');
+
+        if (stErr) throw stErr;
+        if (!studs || studs.length === 0) {
+          if (isSubscribed) {
+            setSectionStudents([]);
+            setLoadingSectionStudents(false);
+          }
+          return;
+        }
+
+        const studentIds = studs.map((s) => s.id);
+        const { data: summaries } = await supabase
+          .from('v_student_attendance_summary')
+          .select('*')
+          .in('student_id', studentIds);
+
+        const sumMap = new Map<string, any>();
+        (summaries || []).forEach((row: any) => {
+          const existing = sumMap.get(row.student_id);
+          if (!existing) {
+            sumMap.set(row.student_id, {
+              total_held: row.total_held || 0,
+              attended_count: row.attended_count || 0,
+              absent_count: row.absent_count || 0,
+              pcts: [parseFloat(row.attendance_percentage) || 0],
+            });
+          } else {
+            existing.total_held += (row.total_held || 0);
+            existing.attended_count += (row.attended_count || 0);
+            existing.absent_count += (row.absent_count || 0);
+            existing.pcts.push(parseFloat(row.attendance_percentage) || 0);
+          }
+        });
+
+        const enriched = studs.map((st: any) => {
+          const meta = sumMap.get(st.id);
+          let avgPct = 0;
+          let held = 0;
+          let attended = 0;
+          let absent = 0;
+          if (meta) {
+            held = meta.total_held;
+            attended = meta.attended_count;
+            absent = meta.absent_count;
+            const avg = meta.pcts.reduce((a: number, b: number) => a + b, 0) / meta.pcts.length;
+            avgPct = Math.round(avg * 10) / 10;
+          }
+          return {
+            id: st.id,
+            roll_number: st.roll_number,
+            name: `${st.profile?.first_name || ''} ${st.profile?.last_name || ''}`.trim() || 'Student',
+            branch: st.branch || 'CSE',
+            total_held: held,
+            attended_count: attended,
+            absent_count: absent,
+            attendance_percentage: avgPct,
+            threshold_status: avgPct >= 80 ? 'good' : avgPct >= 75 ? 'warning' : 'critical'
+          };
+        });
+
+        if (isSubscribed) {
+          setSectionStudents(enriched);
+        }
+      } catch (err) {
+        console.error('Error loading section students:', err);
+      } finally {
+        if (isSubscribed) setLoadingSectionStudents(false);
+      }
+    }
+
+    loadClassStudents();
+    return () => {
+      isSubscribed = false;
+    };
+  }, [selectedSectionId]);
+
+  const selectedSectionObj = useMemo(() => {
+    return sectionsList.find((s) => s.id === selectedSectionId);
+  }, [sectionsList, selectedSectionId]);
+
+  const classAvgAttendance = useMemo(() => {
+    if (sectionStudents.length === 0) return 0;
+    const sum = sectionStudents.reduce((acc, s) => acc + s.attendance_percentage, 0);
+    return Math.round((sum / sectionStudents.length) * 10) / 10;
+  }, [sectionStudents]);
 
   // Instant Dismiss / End active lecture
   const handleDismissSession = async (sessionId: string) => {
@@ -356,13 +507,20 @@ export const DirectorDashboard: React.FC<DirectorDashboardProps> = ({
               <span>Bulk Data Intake (1000+)</span>
             </button>
           )}
-          {onNavigateToAcademicSetup && (
+          {onNavigateToReports && (
             <button
-              onClick={onNavigateToAcademicSetup}
-              className="px-3.5 py-2 bg-purple-50 hover:bg-purple-100 text-purple-700 text-xs font-bold rounded-xl border border-purple-200 transition flex items-center gap-1.5 cursor-pointer shadow-2xs"
+              onClick={() => {
+                const el = document.getElementById('class-wise-report');
+                if (el) {
+                  el.scrollIntoView({ behavior: 'smooth' });
+                } else if (onNavigateToReports) {
+                  onNavigateToReports();
+                }
+              }}
+              className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl shadow-sm transition flex items-center gap-1.5 cursor-pointer"
             >
-              <Building2 className="w-3.5 h-3.5" />
-              <span>Campus & Schools</span>
+              <BarChart3 className="w-3.5 h-3.5" />
+              <span>View Class-Wise Report</span>
             </button>
           )}
         </div>
@@ -592,6 +750,163 @@ export const DirectorDashboard: React.FC<DirectorDashboardProps> = ({
                 </div>
               </div>
             ))}
+          </div>
+        )}
+      </div>
+
+      {/* Class-Wise Attendance & Performance Explorer */}
+      <div id="class-wise-report" className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-4">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+          <div>
+            <div className="flex items-center gap-2">
+              <BarChart3 className="h-5 w-5 text-indigo-600" />
+              <h2 className="text-base font-black text-slate-900">
+                Class-Wise Attendance &amp; Performance Explorer
+              </h2>
+            </div>
+            <p className="text-xs text-slate-500 font-medium mt-0.5">
+              Select any enrolled class to inspect live student roll-list, attended lectures, and statutory threshold compliance.
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Section Picker Dropdown */}
+            <select
+              value={selectedSectionId}
+              onChange={(e) => setSelectedSectionId(e.target.value)}
+              className="px-3.5 py-2 bg-indigo-50/70 border border-indigo-200 rounded-xl text-xs font-bold text-indigo-950 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer shadow-2xs"
+            >
+              {sectionsList.length === 0 ? (
+                <option value="">No Classes Found</option>
+              ) : (
+                sectionsList.map((sec) => (
+                  <option key={sec.id} value={sec.id}>
+                    Class: {sec.name} — {sec.semester?.program?.code || sec.semester?.program?.name} (Sem {sec.semester?.semester_number})
+                  </option>
+                ))
+              )}
+            </select>
+
+            {onNavigateToReports && (
+              <button
+                onClick={onNavigateToReports}
+                className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl shadow-sm transition flex items-center gap-1.5 cursor-pointer"
+              >
+                <span>Full Statutory Report</span>
+                <ExternalLink className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Selected Class Key Highlights */}
+        {selectedSectionObj && (
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-slate-50 p-4 rounded-xl border border-slate-200 text-xs">
+            <div>
+              <span className="text-[10px] uppercase font-bold text-slate-400">Class &amp; Semester</span>
+              <div className="font-bold text-slate-900 mt-0.5">
+                {selectedSectionObj.name} • Sem {selectedSectionObj.semester?.semester_number}
+              </div>
+            </div>
+            <div>
+              <span className="text-[10px] uppercase font-bold text-slate-400">Class Coordinator</span>
+              <div className="font-bold text-slate-900 mt-0.5">
+                {selectedSectionObj.coordinator?.profile
+                  ? `Prof. ${selectedSectionObj.coordinator.profile.first_name} ${selectedSectionObj.coordinator.profile.last_name}`
+                  : 'Not Assigned'}
+              </div>
+            </div>
+            <div>
+              <span className="text-[10px] uppercase font-bold text-slate-400">Enrolled Students</span>
+              <div className="font-mono font-bold text-indigo-700 mt-0.5">
+                {sectionStudents.length} Students
+              </div>
+            </div>
+            <div>
+              <span className="text-[10px] uppercase font-bold text-slate-400">Class Avg Attendance</span>
+              <div className="font-mono font-bold text-emerald-700 mt-0.5">
+                {classAvgAttendance}%
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Students Table */}
+        {loadingSectionStudents ? (
+          <div className="p-8 text-center text-slate-400 flex flex-col items-center justify-center gap-2">
+            <div className="w-5 h-5 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin" />
+            <p className="text-xs font-semibold text-slate-500">Loading student attendance for this class...</p>
+          </div>
+        ) : sectionStudents.length === 0 ? (
+          <div className="p-8 text-center text-slate-400 bg-slate-50/50 rounded-xl border border-dashed border-slate-200">
+            <Users className="h-6 w-6 mx-auto mb-1 text-slate-300" />
+            <p className="text-xs font-bold text-slate-600">No students currently enrolled in this section</p>
+            <p className="text-[11px] text-slate-400 mt-0.5">
+              Assign students to this section in the Student Directory or Bulk Import tool.
+            </p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto rounded-xl border border-slate-200">
+            <table className="w-full text-left text-xs text-slate-600">
+              <thead className="bg-slate-50 text-slate-500 uppercase font-bold tracking-wider text-[10px] border-b border-slate-200">
+                <tr>
+                  <th className="py-2.5 px-3">Roll Number</th>
+                  <th className="py-2.5 px-3">Student Name</th>
+                  <th className="py-2.5 px-3">Branch</th>
+                  <th className="py-2.5 px-3 text-center">Conducted</th>
+                  <th className="py-2.5 px-3 text-center">Attended</th>
+                  <th className="py-2.5 px-3 text-center">Absent</th>
+                  <th className="py-2.5 px-3">Attendance %</th>
+                  <th className="py-2.5 px-3 text-right">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 bg-white">
+                {sectionStudents.map((st) => (
+                  <tr key={st.id} className="hover:bg-slate-50/80 transition-colors">
+                    <td className="py-2.5 px-3 font-mono font-bold text-slate-900">{st.roll_number}</td>
+                    <td className="py-2.5 px-3 font-semibold text-slate-800">{st.name}</td>
+                    <td className="py-2.5 px-3">
+                      <span className="text-[10px] font-bold px-1.5 py-0.5 bg-slate-100 text-slate-700 rounded border border-slate-200">
+                        {st.branch}
+                      </span>
+                    </td>
+                    <td className="py-2.5 px-3 text-center font-mono font-bold">{st.total_held}</td>
+                    <td className="py-2.5 px-3 text-center font-mono font-bold text-emerald-600">{st.attended_count}</td>
+                    <td className="py-2.5 px-3 text-center font-mono font-bold text-rose-600">{st.absent_count}</td>
+                    <td className="py-2.5 px-3">
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono font-bold text-slate-900">{st.attendance_percentage}%</span>
+                        <div className="w-16 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                          <div
+                            className={`h-full rounded-full ${
+                              st.attendance_percentage >= 80
+                                ? 'bg-emerald-500'
+                                : st.attendance_percentage >= 75
+                                ? 'bg-amber-500'
+                                : 'bg-rose-500'
+                            }`}
+                            style={{ width: `${Math.min(100, st.attendance_percentage)}%` }}
+                          />
+                        </div>
+                      </div>
+                    </td>
+                    <td className="py-2.5 px-3 text-right">
+                      <span
+                        className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                          st.threshold_status === 'good'
+                            ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                            : st.threshold_status === 'warning'
+                            ? 'bg-amber-50 text-amber-700 border border-amber-200'
+                            : 'bg-rose-50 text-rose-700 border border-rose-200'
+                        }`}
+                      >
+                        {st.threshold_status === 'good' ? 'Eligible' : st.threshold_status === 'warning' ? 'Borderline' : 'Shortage'}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         )}
       </div>

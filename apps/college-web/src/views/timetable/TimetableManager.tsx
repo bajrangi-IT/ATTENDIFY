@@ -80,8 +80,10 @@ interface TimetableEntryItem {
 }
 
 export const TimetableManager: React.FC = () => {
-  const { profile, role, currentInstitutionId } = useAuth();
+  const { profile, role, facultyRecord, currentInstitutionId } = useAuth();
   const { addToast } = useToast();
+  const isFaculty = Boolean(facultyRecord?.id) || (role as string) === 'faculty' || (role as string) === 'hod' || (role as string) === 'teacher';
+  const [filterToMySchedule, setFilterToMySchedule] = useState<boolean>(true);
 
   const [entries, setEntries] = useState<TimetableEntryItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -264,7 +266,10 @@ export const TimetableManager: React.FC = () => {
         `)
         .in('section_id', secIds);
 
-      if (selectedSectionId !== 'ALL') {
+      // Personal timetable scoping: If user is a faculty member, strictly scope to their assigned slots
+      if (isFaculty && facultyRecord?.id && filterToMySchedule) {
+        query = query.eq('faculty_id', facultyRecord.id);
+      } else if (selectedSectionId !== 'ALL') {
         query = query.eq('section_id', selectedSectionId);
       }
 
@@ -285,7 +290,7 @@ export const TimetableManager: React.FC = () => {
 
   useEffect(() => {
     loadTimetableData();
-  }, [selectedSectionId, profile?.institution_id, currentInstitutionId]);
+  }, [selectedSectionId, profile?.institution_id, currentInstitutionId, filterToMySchedule, facultyRecord?.id]);
 
   // Load Timetable Change History
   const loadChangeHistory = async () => {
@@ -523,14 +528,44 @@ export const TimetableManager: React.FC = () => {
         <div>
           <div className="flex items-center space-x-2 text-slate-900 font-bold text-xl">
             <Calendar className="h-6 w-6 text-indigo-600" />
-            <span>Class Timetable Schedule</span>
+            <span>{isFaculty && filterToMySchedule ? 'My Personal Teaching Timetable' : 'Class Timetable Schedule'}</span>
+            {isFaculty && filterToMySchedule && (
+              <span className="px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider bg-emerald-100 text-emerald-800 border border-emerald-300">
+                Personal Schedule
+              </span>
+            )}
           </div>
           <p className="text-xs text-slate-500 mt-1">
-            Weekly lecture schedules, room allocations, and faculty assignments.
+            {isFaculty && filterToMySchedule
+              ? `Weekly lecture commitments for Prof. ${facultyRecord?.profile ? `${facultyRecord.profile.first_name} ${facultyRecord.profile.last_name}` : 'Faculty'} (${facultyRecord?.employee_code || ''})`
+              : 'Weekly lecture schedules, room allocations, and faculty assignments.'}
           </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          {isFaculty && (
+            <div className="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200 text-xs font-bold">
+              <button
+                type="button"
+                onClick={() => setFilterToMySchedule(true)}
+                className={`px-3 py-1.5 rounded-lg transition ${
+                  filterToMySchedule ? 'bg-indigo-600 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                My Lectures
+              </button>
+              <button
+                type="button"
+                onClick={() => setFilterToMySchedule(false)}
+                className={`px-3 py-1.5 rounded-lg transition ${
+                  !filterToMySchedule ? 'bg-indigo-600 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                All Classes
+              </button>
+            </div>
+          )}
+
           <button
             onClick={loadChangeHistory}
             className="inline-flex items-center space-x-1.5 px-3.5 py-2 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-xl transition cursor-pointer"
