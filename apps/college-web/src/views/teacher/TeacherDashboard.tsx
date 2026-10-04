@@ -17,12 +17,33 @@ import {
   BarChart3
 } from 'lucide-react';
 import { Skeleton } from '../../components/ui/Skeleton';
+import { ManualAttendanceModal, ManualAttendancePreload } from '../../components/ManualAttendanceModal';
+import { formatSectionShortBadge } from '../../lib/academicLabels';
 
 interface TeacherDashboardProps {
   onNavigateToSession?: (sessionId?: string) => void;
   onNavigateToTimetable?: () => void;
   onNavigateToReports?: () => void;
 }
+
+const DAYS = [
+  { id: 1, name: 'Monday', short: 'Mon' },
+  { id: 2, name: 'Tuesday', short: 'Tue' },
+  { id: 3, name: 'Wednesday', short: 'Wed' },
+  { id: 4, name: 'Thursday', short: 'Thu' },
+  { id: 5, name: 'Friday', short: 'Fri' },
+  { id: 6, name: 'Saturday', short: 'Sat' },
+];
+
+const formatTime12 = (t: string) => {
+  if (!t) return '';
+  const parts = t.split(':');
+  const h = parseInt(parts[0], 10);
+  const m = parts[1] || '00';
+  const period = h >= 12 ? 'PM' : 'AM';
+  const hour12 = h % 12 === 0 ? 12 : h % 12;
+  return `${String(hour12).padStart(2, '0')}:${m} ${period}`;
+};
 
 export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
   onNavigateToSession,
@@ -35,6 +56,14 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
   const [loading, setLoading] = useState(true);
   const [assignedSubjects, setAssignedSubjects] = useState<any[]>([]);
   const [todaySchedule, setTodaySchedule] = useState<any[]>([]);
+  const [weeklySchedule, setWeeklySchedule] = useState<any[]>([]);
+  const [selectedScheduleDay, setSelectedScheduleDay] = useState<number>(() => {
+    const jsDay = new Date().getDay();
+    return jsDay >= 1 && jsDay <= 6 ? jsDay : 1;
+  });
+  const [isManualModalOpen, setIsManualModalOpen] = useState(false);
+  const [manualModalPreload, setManualModalPreload] = useState<ManualAttendancePreload | null>(null);
+
   const [coordinatedSection, setCoordinatedSection] = useState<any | null>(null);
   const [coordinatedStudentsCount, setCoordinatedStudentsCount] = useState<number>(0);
   const [stats, setStats] = useState({
@@ -44,10 +73,9 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
     activeSessionId: null as string | null,
   });
 
-  useEffect(() => {
-    async function loadTeacherData() {
-      setLoading(true);
-      try {
+  const loadTeacherData = async () => {
+    setLoading(true);
+    try {
         // 1. Fetch faculty assignments
         let aQuery = supabase
           .from('faculty_assignments')
@@ -66,17 +94,15 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
         if (aErr) throw aErr;
         setAssignedSubjects(assignments || []);
 
-        // 2. Fetch today's schedule (scoped to this faculty)
-        const currentDay = new Date().getDay() || 7; // Sunday = 7
+        // 2. Fetch full weekly schedule (scoped to this faculty)
         let schedQuery = supabase
           .from('timetable_entries')
           .select(`
             id, day_of_week, start_time, end_time, classroom_id, section_id, subject_offering_id, faculty_id,
             classroom:classrooms(id, room_number, building),
-            section:sections(id, name),
+            section:sections(id, name, semester:semesters(semester_number, program:programs(name, code))),
             subject_offering:subject_offerings(id, subject:subjects(id, name, code))
-          `)
-          .eq('day_of_week', currentDay);
+          `);
 
         if (facultyRecord?.id) {
           schedQuery = schedQuery.eq('faculty_id', facultyRecord.id);
@@ -85,7 +111,10 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
         const { data: schedule, error: scErr } = await schedQuery.order('start_time');
 
         if (scErr) throw scErr;
-        setTodaySchedule(schedule || []);
+        const allSched = schedule || [];
+        setWeeklySchedule(allSched);
+        const currentDay = new Date().getDay() || 7;
+        setTodaySchedule(allSched.filter((s) => s.day_of_week === currentDay));
 
         // 3. Fetch summary metrics from database
         let sessQuery = supabase
@@ -158,9 +187,10 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
       } finally {
         setLoading(false);
       }
-    }
+    };
 
-    loadTeacherData();
+    useEffect(() => {
+      loadTeacherData();
 
     // Setup realtime subscription for instant timetable & lecture synchronization
     const channel = supabase
@@ -332,7 +362,18 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
           </p>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2.5">
+          <button
+            onClick={() => {
+              setManualModalPreload(null);
+              setIsManualModalOpen(true);
+            }}
+            className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl shadow-lg shadow-emerald-600/20 flex items-center gap-2 transition-all cursor-pointer"
+          >
+            <BookOpen className="h-4 w-4" />
+            <span>Manual Attendance (Guest/Library)</span>
+          </button>
+
           <button
             onClick={() => handleStartAttendanceSession(stats.activeSessionId ? { sessionId: stats.activeSessionId } : undefined)}
             className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-xl shadow-lg shadow-indigo-600/30 flex items-center gap-2 transition-all cursor-pointer"
@@ -493,12 +534,12 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
           </div>
         </div>
 
-        {/* Today's Timetable */}
-        <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm flex flex-col justify-between">
+        {/* Day-Wise Lecture Schedule */}
+        <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm flex flex-col justify-between space-y-4">
           <div>
-            <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center justify-between mb-3">
               <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-                <Calendar className="h-4 w-4 text-indigo-600" /> Today's Lecture Schedule
+                <Calendar className="h-4 w-4 text-indigo-600" /> Day-Wise Lecture Schedule
               </h2>
               <button
                 onClick={onNavigateToTimetable}
@@ -508,59 +549,148 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
               </button>
             </div>
 
+            {/* Mini Day Tabs */}
+            <div className="flex items-center gap-1.5 p-1 bg-slate-100 rounded-xl mb-3 overflow-x-auto">
+              {DAYS.map((d) => {
+                const isToday = (new Date().getDay() || 7) === d.id;
+                const isSelected = selectedScheduleDay === d.id;
+                const count = weeklySchedule.filter((s) => s.day_of_week === d.id).length;
+
+                return (
+                  <button
+                    key={d.id}
+                    onClick={() => setSelectedScheduleDay(d.id)}
+                    className={`flex-1 min-w-[50px] py-1.5 px-2 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1 cursor-pointer ${
+                      isSelected
+                        ? 'bg-indigo-600 text-white shadow-xs'
+                        : 'text-slate-600 hover:bg-slate-200/80 hover:text-slate-900'
+                    }`}
+                  >
+                    <span>{d.short}</span>
+                    {isToday && (
+                      <span className={`w-1.5 h-1.5 rounded-full ${isSelected ? 'bg-emerald-300' : 'bg-emerald-500'}`} />
+                    )}
+                    <span className={`text-[10px] ${isSelected ? 'text-indigo-200' : 'text-slate-400'}`}>
+                      ({count})
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
             <div className="space-y-3">
               {loading ? (
                 <div className="space-y-2">
                   <Skeleton className="h-16 w-full" />
                   <Skeleton className="h-16 w-full" />
                 </div>
-              ) : todaySchedule.length === 0 ? (
-                <div className="p-8 text-center text-slate-400">
-                  <Clock className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                  <p className="text-xs font-semibold">No scheduled lectures for today</p>
-                </div>
-              ) : (
-                todaySchedule.map((slot) => (
+              ) : (() => {
+                const daySlots = weeklySchedule
+                  .filter((s) => s.day_of_week === selectedScheduleDay)
+                  .sort((a, b) => a.start_time.localeCompare(b.start_time));
+                const activeDayObj = DAYS.find((d) => d.id === selectedScheduleDay);
+
+                if (daySlots.length === 0) {
+                  return (
+                    <div className="p-8 text-center text-slate-400">
+                      <Clock className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                      <p className="text-xs font-semibold">No scheduled lectures for {activeDayObj?.name || 'this day'}</p>
+                      <button
+                        onClick={() => {
+                          setManualModalPreload({
+                            sessionDate: (new Date().getDay() || 7) === selectedScheduleDay ? new Date().toISOString().slice(0, 10) : undefined,
+                          });
+                          setIsManualModalOpen(true);
+                        }}
+                        className="mt-3 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl transition inline-flex items-center gap-1.5"
+                      >
+                        <BookOpen className="h-3.5 w-3.5" />
+                        <span>Manual / Guest Lecture</span>
+                      </button>
+                    </div>
+                  );
+                }
+
+                return daySlots.map((slot) => (
                   <div
                     key={slot.id}
-                    className="p-3.5 rounded-xl border border-slate-200 bg-slate-50 flex items-center justify-between"
+                    className="p-3.5 rounded-xl border border-slate-200 bg-slate-50 hover:bg-white hover:border-indigo-200 transition flex flex-col sm:flex-row sm:items-center justify-between gap-3"
                   >
                     <div>
                       <div className="flex items-center gap-2">
                         <span className="text-xs font-bold text-slate-800">
                           {slot.subject_offering?.subject?.code}: {slot.subject_offering?.subject?.name}
                         </span>
+                        <span className="px-1.5 py-0.2 rounded text-[10px] font-bold bg-indigo-50 text-indigo-800 border border-indigo-200">
+                          {formatSectionShortBadge(slot.section)}
+                        </span>
                       </div>
                       <div className="text-[11px] text-slate-500 flex items-center gap-3 mt-1">
                         <span className="font-mono font-semibold text-indigo-600">
-                          {slot.start_time.substring(0, 5)} - {slot.end_time.substring(0, 5)}
+                          {formatTime12(slot.start_time)} - {formatTime12(slot.end_time)}
                         </span>
-                        <span>Room {slot.classroom?.room_number}</span>
-                        <span>{slot.section?.name}</span>
+                        <span>Room {slot.classroom?.room_number || 'TBA'}</span>
                       </div>
                     </div>
 
-                    <button
-                      onClick={() =>
-                        handleStartAttendanceSession({
-                          subjectOfferingId: slot.subject_offering_id || slot.subject_offering?.id,
-                          sectionId: slot.section_id || slot.section?.id,
-                          classroomId: slot.classroom_id || slot.classroom?.id,
-                          timetableEntryId: slot.id,
-                        })
-                      }
-                      className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-xl shadow-sm flex items-center gap-1.5 transition-all cursor-pointer"
-                    >
-                      <Radio className="h-3.5 w-3.5 text-indigo-200 animate-pulse" />
-                      <span>Take Attendance</span>
-                    </button>
+                    <div className="flex items-center gap-2">
+                      {/* Manual / Guest Lecture Option */}
+                      <button
+                        onClick={() => {
+                          setManualModalPreload({
+                            sectionId: slot.section_id || slot.section?.id,
+                            subjectOfferingId: slot.subject_offering_id || slot.subject_offering?.id,
+                            startTime: slot.start_time,
+                            endTime: slot.end_time,
+                            classroomId: slot.classroom_id || slot.classroom?.id,
+                            sessionDate: (new Date().getDay() || 7) === selectedScheduleDay ? new Date().toISOString().slice(0, 10) : undefined,
+                          });
+                          setIsManualModalOpen(true);
+                        }}
+                        className="px-2.5 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 text-xs font-bold rounded-xl transition flex items-center gap-1 cursor-pointer"
+                        title="Mark manual attendance for Guest lecture, Library, or Timetable abnormality"
+                      >
+                        <BookOpen className="h-3.5 w-3.5 text-emerald-600" />
+                        <span>Manual</span>
+                      </button>
+
+                      <button
+                        onClick={() =>
+                          handleStartAttendanceSession({
+                            subjectOfferingId: slot.subject_offering_id || slot.subject_offering?.id,
+                            sectionId: slot.section_id || slot.section?.id,
+                            classroomId: slot.classroom_id || slot.classroom?.id,
+                            timetableEntryId: slot.id,
+                          })
+                        }
+                        className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-xl shadow-sm flex items-center gap-1.5 transition-all cursor-pointer"
+                      >
+                        <Radio className="h-3.5 w-3.5 text-indigo-200 animate-pulse" />
+                        <span>Live Session</span>
+                      </button>
+                    </div>
                   </div>
-                ))
-              )}
+                ));
+              })()}
             </div>
           </div>
         </div>
       </div>
+
+      {/* Manual / Ad-hoc Attendance Modal */}
+      <ManualAttendanceModal
+        isOpen={isManualModalOpen}
+        onClose={() => {
+          setIsManualModalOpen(false);
+          setManualModalPreload(null);
+        }}
+        initialData={manualModalPreload}
+        onSuccess={() => {
+          setIsManualModalOpen(false);
+          setManualModalPreload(null);
+          loadTeacherData();
+        }}
+      />
     </div>
   );
 };

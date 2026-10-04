@@ -81,6 +81,50 @@ export const StudentDashboard: React.FC = () => {
   const [dateWiseRecords, setDateWiseRecords] = useState<DateWiseRecord[]>([]);
   const [leaveHistory, setLeaveHistory] = useState<LeaveAppItem[]>([]);
   const [todaySchedule, setTodaySchedule] = useState<any[]>([]);
+  const [weeklyTimetable, setWeeklyTimetable] = useState<any[]>([]);
+  const [selectedScheduleDay, setSelectedScheduleDay] = useState<number>(() => {
+    const jsDay = new Date().getDay();
+    return jsDay >= 1 && jsDay <= 6 ? jsDay : 1;
+  });
+
+  const DAYS = [
+    { id: 1, name: 'Monday' },
+    { id: 2, name: 'Tuesday' },
+    { id: 3, name: 'Wednesday' },
+    { id: 4, name: 'Thursday' },
+    { id: 5, name: 'Friday' },
+    { id: 6, name: 'Saturday' },
+  ];
+
+  const formatTime12 = (t: string) => {
+    if (!t) return '';
+    const parts = t.split(':');
+    const h = parseInt(parts[0], 10);
+    const m = parts[1] || '00';
+    const period = h >= 12 ? 'PM' : 'AM';
+    const hour12 = h % 12 === 0 ? 12 : h % 12;
+    return `${String(hour12).padStart(2, '0')}:${m} ${period}`;
+  };
+
+  const getStudentSlotStatus = (slot: any, isDayToday: boolean) => {
+    if (!isDayToday) {
+      return { status: 'scheduled', label: 'Scheduled', badgeClass: 'bg-slate-100 text-slate-700 border border-slate-200' };
+    }
+    const now = new Date();
+    const curM = now.getHours() * 60 + now.getMinutes();
+    const [sH, sM] = slot.start_time.split(':').map(Number);
+    const [eH, eM] = slot.end_time.split(':').map(Number);
+    const startM = sH * 60 + sM;
+    const endM = eH * 60 + eM;
+
+    if (curM >= startM && curM <= endM) {
+      return { status: 'live', label: 'LIVE NOW', badgeClass: 'bg-rose-50 text-rose-700 border border-rose-300 font-bold animate-pulse' };
+    }
+    if (curM > endM) {
+      return { status: 'completed', label: 'Completed', badgeClass: 'bg-emerald-50 text-emerald-800 border border-emerald-200 font-semibold' };
+    }
+    return { status: 'upcoming', label: 'Upcoming', badgeClass: 'bg-indigo-50 text-indigo-700 border border-indigo-200 font-semibold' };
+  };
 
   // Correction Request Modal
   const [selectedRecordForCorrection, setSelectedRecordForCorrection] = useState<DateWiseRecord | null>(null);
@@ -202,7 +246,7 @@ export const StudentDashboard: React.FC = () => {
 
       setLeaveHistory(leaves || []);
 
-      // 5. Fetch Today's Timetable for Student's section
+      // 5. Fetch Weekly Timetable for Student's section
       const sectionId = (sInfo as any)?.current_section_id || (sInfo as any)?.current_section?.id;
       if (sectionId) {
         const todayDayOfWeek = new Date().getDay() === 0 ? 7 : new Date().getDay(); // 1=Mon, 7=Sun
@@ -210,17 +254,19 @@ export const StudentDashboard: React.FC = () => {
           .from('timetable_entries')
           .select(`
             id,
+            day_of_week,
             start_time,
             end_time,
             classroom:classrooms(room_number, building),
-            faculty:faculty(profile:profiles(first_name, last_name)),
+            faculty:faculty(employee_code, profile:profiles(first_name, last_name)),
             subject_offering:subject_offerings(subject:subjects(name, code))
           `)
           .eq('section_id', sectionId)
-          .eq('day_of_week', todayDayOfWeek)
           .order('start_time', { ascending: true });
 
-        setTodaySchedule(sched || []);
+        const allSched = sched || [];
+        setWeeklyTimetable(allSched);
+        setTodaySchedule(allSched.filter((e) => e.day_of_week === todayDayOfWeek));
       }
 
       // 5. Fetch active lecture in student section or LH-101 demo room
@@ -971,40 +1017,154 @@ export const StudentDashboard: React.FC = () => {
         </div>
       )}
 
-      {/* Tab 3: Today's Schedule */}
+      {/* Tab 3: Day-Wise Class Schedule */}
       {activeTab === 'schedule' && (
-        <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm p-6 space-y-4">
-          <h3 className="font-bold text-sm text-slate-800">Today's Class Schedule</h3>
-          {todaySchedule.length === 0 ? (
-            <p className="text-xs text-slate-400 py-6 text-center">
-              No classes scheduled for today. Enjoy your study day!
-            </p>
-          ) : (
-            <div className="space-y-3">
-              {todaySchedule.map((slot) => (
-                <div
-                  key={slot.id}
-                  className="flex items-center justify-between p-4 rounded-xl border border-slate-200 bg-slate-50/50 text-xs"
+        <div className="space-y-4">
+          {/* Day Navigation Tabs */}
+          <div className="bg-white p-2 rounded-2xl border border-slate-200/80 shadow-sm flex items-center gap-1.5 overflow-x-auto">
+            {DAYS.map((day) => {
+              const isToday = (new Date().getDay() === 0 ? 7 : new Date().getDay()) === day.id;
+              const isSelected = selectedScheduleDay === day.id;
+              const dayCount = weeklyTimetable.filter((e) => e.day_of_week === day.id).length;
+
+              return (
+                <button
+                  key={day.id}
+                  onClick={() => setSelectedScheduleDay(day.id)}
+                  className={`flex-1 min-w-[110px] px-3 py-2.5 rounded-xl transition-all flex flex-col items-center justify-center text-center relative cursor-pointer border ${
+                    isSelected
+                      ? 'bg-indigo-600 text-white border-indigo-700 shadow-md shadow-indigo-600/20'
+                      : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200/70 hover:border-slate-300'
+                  }`}
                 >
-                  <div className="flex items-center space-x-3">
-                    <div className="bg-indigo-600 text-white font-mono font-bold px-3 py-2 rounded-xl text-center">
-                      {slot.start_time.slice(0, 5)}
-                    </div>
-                    <div>
-                      <h4 className="font-bold text-slate-900 text-sm">
-                        {slot.subject_offering?.subject?.name}
-                      </h4>
-                      <p className="text-slate-500 text-[11px]">
-                        Instructor:{' '}
-                        {slot.faculty?.profile ? `${slot.faculty.profile.first_name} ${slot.faculty.profile.last_name}` : 'Faculty'} &bull; Room {slot.classroom?.room_number}
-                      </p>
-                    </div>
+                  <div className="flex items-center gap-1">
+                    <span className="font-bold text-xs uppercase tracking-wider">{day.name.slice(0, 3)}</span>
+                    {isToday && (
+                      <span
+                        className={`text-[8px] font-black px-1.5 py-0.2 rounded-full uppercase tracking-wider ${
+                          isSelected
+                            ? 'bg-emerald-400 text-emerald-950 font-bold'
+                            : 'bg-emerald-100 text-emerald-800 font-bold'
+                        }`}
+                      >
+                        Today
+                      </span>
+                    )}
                   </div>
-                  <Badge variant="default">Scheduled</Badge>
+                  <span
+                    className={`text-[10px] font-medium mt-0.5 ${
+                      isSelected ? 'text-indigo-100' : 'text-slate-400'
+                    }`}
+                  >
+                    {dayCount} {dayCount === 1 ? 'Class' : 'Classes'}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Selected Day Timetable Cards */}
+          {(() => {
+            const activeDayObj = DAYS.find((d) => d.id === selectedScheduleDay) || DAYS[0];
+            const isSelectedDayToday = (new Date().getDay() === 0 ? 7 : new Date().getDay()) === selectedScheduleDay;
+            const daySlots = weeklyTimetable
+              .filter((e) => e.day_of_week === selectedScheduleDay)
+              .sort((a, b) => a.start_time.localeCompare(b.start_time));
+
+            return (
+              <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm p-5 space-y-4">
+                <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                  <div>
+                    <h3 className="font-bold text-sm text-slate-900 flex items-center gap-2">
+                      <Clock className="h-4 w-4 text-indigo-600" />
+                      <span>{activeDayObj.name}'s Lecture Schedule</span>
+                      {isSelectedDayToday && (
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
+                          Today
+                        </span>
+                      )}
+                    </h3>
+                    <p className="text-xs text-slate-400 mt-0.5">
+                      {daySlots.length === 0
+                        ? 'No academic lectures scheduled'
+                        : `${daySlots.length} lectures arranged time-wise`}
+                    </p>
+                  </div>
                 </div>
-              ))}
-            </div>
-          )}
+
+                {daySlots.length === 0 ? (
+                  <div className="py-12 text-center text-slate-400">
+                    <Clock className="h-8 w-8 mx-auto mb-2 text-slate-300 stroke-[1.5]" />
+                    <p className="text-xs font-semibold text-slate-600">No classes scheduled for {activeDayObj.name}</p>
+                    <p className="text-[11px] text-slate-400 mt-0.5">Enjoy your self-study and revision time!</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {daySlots.map((slot) => {
+                      const slotStatus = getStudentSlotStatus(slot, isSelectedDayToday);
+                      return (
+                        <div
+                          key={slot.id}
+                          className="flex flex-col sm:flex-row sm:items-center justify-between p-4 rounded-xl border border-slate-200/90 bg-slate-50/50 hover:bg-white hover:border-indigo-200 hover:shadow-xs transition text-xs gap-3"
+                        >
+                          <div className="flex items-start sm:items-center space-x-3">
+                            <div className="bg-indigo-600 text-white font-mono font-bold px-3 py-2 rounded-xl text-center shrink-0">
+                              <div className="text-xs">{formatTime12(slot.start_time).split(' ')[0]}</div>
+                              <div className="text-[9px] text-indigo-200 font-sans uppercase">
+                                {formatTime12(slot.start_time).split(' ')[1]}
+                              </div>
+                            </div>
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <h4 className="font-bold text-slate-900 text-sm">
+                                  {slot.subject_offering?.subject?.name}
+                                </h4>
+                                {slot.subject_offering?.subject?.code && (
+                                  <span className="font-mono text-[10px] bg-slate-200/80 px-1.5 py-0.2 rounded font-semibold text-slate-700">
+                                    {slot.subject_offering.subject.code}
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-slate-500 text-[11px] mt-0.5">
+                                <span className="font-medium text-slate-700">
+                                  {slot.faculty?.profile
+                                    ? `Prof. ${slot.faculty.profile.first_name} ${slot.faculty.profile.last_name}`
+                                    : slot.faculty?.employee_code || 'Faculty'}
+                                </span>
+                                {' '}&bull; Room {slot.classroom?.room_number || 'TBA'}
+                                {slot.classroom?.building ? ` (${slot.classroom.building})` : ''}
+                              </p>
+                              <p className="text-indigo-600 font-mono text-[10px] font-semibold mt-0.5">
+                                Slot: {formatTime12(slot.start_time)} &rarr; {formatTime12(slot.end_time)}
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-2 self-start sm:self-auto">
+                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${slotStatus.badgeClass}`}>
+                              {slotStatus.label}
+                            </span>
+                            {slotStatus.status === 'live' && !isAlreadyMarked && (
+                              <button
+                                onClick={() => {
+                                  setIsScannerOpen(true);
+                                  startCamera();
+                                }}
+                                className="px-3 py-1 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-lg shadow-xs transition flex items-center gap-1 animate-bounce"
+                              >
+                                <Camera className="h-3 w-3" />
+                                <span>Scan QR</span>
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
         </div>
       )}
 

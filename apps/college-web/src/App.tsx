@@ -176,6 +176,7 @@ const MainAppContent: React.FC = () => {
               onNavigateToStudents={() => setActiveTab('student-directory')}
               onNavigateToBulkImport={() => setActiveTab('bulk-import')}
               onNavigateToAcademicSetup={() => setActiveTab('academic-setup')}
+              onNavigateToTimetable={() => setActiveTab('timetable')}
             />
           )}
           {activeTab === 'institutional-reports' && <InstitutionalReportsView />}

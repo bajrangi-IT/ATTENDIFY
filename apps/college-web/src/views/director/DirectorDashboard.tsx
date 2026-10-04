@@ -20,15 +20,18 @@ import {
   Filter,
   CheckCircle2,
   BarChart3,
-  GraduationCap
+  GraduationCap,
+  Calendar
 } from 'lucide-react';
 import { formatSectionLabel, formatSectionShortBadge } from '../../lib/academicLabels';
+import { ManualAttendanceModal } from '../../components/ManualAttendanceModal';
 
 interface DirectorDashboardProps {
   onNavigateToReports?: () => void;
   onNavigateToStudents?: () => void;
   onNavigateToBulkImport?: () => void;
   onNavigateToAcademicSetup?: () => void;
+  onNavigateToTimetable?: () => void;
 }
 
 export const DirectorDashboard: React.FC<DirectorDashboardProps> = ({
@@ -36,10 +39,12 @@ export const DirectorDashboard: React.FC<DirectorDashboardProps> = ({
   onNavigateToStudents,
   onNavigateToBulkImport,
   onNavigateToAcademicSetup,
+  onNavigateToTimetable,
 }) => {
   const toast = useToast();
   const { profile, institution, currentInstitutionId } = useAuth();
   const [loading, setLoading] = useState(true);
+  const [isManualModalOpen, setIsManualModalOpen] = useState(false);
 
   // Department isolation state
   const [departmentsList, setDepartmentsList] = useState<any[]>([]);
@@ -499,6 +504,24 @@ export const DirectorDashboard: React.FC<DirectorDashboardProps> = ({
         </div>
 
         <div className="flex flex-wrap items-center gap-2 self-start md:self-auto">
+          <button
+            onClick={() => setIsManualModalOpen(true)}
+            className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-sm transition flex items-center gap-1.5 cursor-pointer"
+          >
+            <BookOpen className="w-3.5 h-3.5" />
+            <span>Manual Attendance (Guest/Library)</span>
+          </button>
+
+          {onNavigateToTimetable && (
+            <button
+              onClick={onNavigateToTimetable}
+              className="px-3.5 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-bold rounded-xl border border-indigo-200 transition flex items-center gap-1.5 cursor-pointer shadow-2xs"
+            >
+              <Calendar className="w-3.5 h-3.5" />
+              <span>Day-Wise Timetable</span>
+            </button>
+          )}
+
           {onNavigateToBulkImport && (
             <button
               onClick={onNavigateToBulkImport}
@@ -967,6 +990,16 @@ export const DirectorDashboard: React.FC<DirectorDashboardProps> = ({
           ))}
         </div>
       </div>
+      {/* Manual / Ad-hoc Attendance Register Modal */}
+      <ManualAttendanceModal
+        isOpen={isManualModalOpen}
+        onClose={() => setIsManualModalOpen(false)}
+        onSuccess={() => {
+          setIsManualModalOpen(false);
+          // Refresh institutional overview
+          window.location.reload();
+        }}
+      />
     </div>
   );
 };
